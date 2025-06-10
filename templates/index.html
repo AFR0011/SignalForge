@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <song>Song Downloader</song>
+</head>
+<body>
+    <h2>Upload CSV File</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="csv_file" required>
+        <button type="submit">Upload</button>
+    </form>
+
+    {% if songs %}
+    <hr>
+    <h3>Select Songs to Download</h3>
+    <form method="POST" action="/download">
+        <table border="1">
+            <tr>
+                <th>Select</th>
+                <th>Song</th>
+                <th>Artist</th>
+            </tr>
+            {% for song in songs %}
+            <tr>
+                <td><input type="checkbox" name="selected" value="{{ loop.index0 }}"></td>
+                <td>{{ song.Song }}</td>
+                <td>{{ song.Artist }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        <br>
+        <button type="submit">Download Selected</button>
+    </form>
+    {% endif %}
+</body>
+</html>
