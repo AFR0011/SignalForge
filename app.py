@@ -65,15 +65,24 @@ def fetch_cover_art(song_title, artist_name):
         print(f"[Cover Art] Failed to fetch: {e}")
     return None
 
-def tag_mp3(filepath, title, artist):
+def tag_mp3(filepath, title, artist, album=None, genres=None):
     try:
         audio = EasyID3(filepath)
     except Exception:
         audio = MP3(filepath, ID3=EasyID3)
         audio.add_tags()
+
     audio["title"] = title
     audio["artist"] = artist
+    if album:
+        audio["album"] = album
+    if genres:
+        # genres can be comma-separated or a list
+        if isinstance(genres, str):
+            genres = [g.strip() for g in genres.split(",")]
+        audio["genre"] = genres
     audio.save()
+
     cover_data = fetch_cover_art(title, artist.split(",")[0])
     if cover_data:
         try:
@@ -115,10 +124,12 @@ def download_song():
         song = songs[idx]
         raw_title = song.get("Song") or song.get("Title")
         artist = song.get("Artist", "")
+        album = song.get("Album", "")
+        genres = song.get("Genres", "")
+
         formatted_title = format_title(raw_title)
         query = f"{artist} {raw_title}"
 
-        # Generate unique sanitized file path
         sanitized = sanitize_filename(formatted_title)
         base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
         output_file = unique_path(base_path)
@@ -127,7 +138,7 @@ def download_song():
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": outtmpl,
-            "ffmpeg_location": "C:\\ffmpeg\\bin",  # change if needed
+            "ffmpeg_location": "C:\\ffmpeg\\bin",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
@@ -140,11 +151,12 @@ def download_song():
         with YoutubeDL(ydl_opts) as ydl:
             try:
                 ydl.download([f"ytsearch1:{query}"])
-                tag_mp3(output_file, formatted_title, artist)
+                tag_mp3(output_file, formatted_title, artist, album, genres)
             except Exception as e:
                 print(f"[Download Error] {query}: {e}")
 
     return redirect("/downloads")
+
 
 @app.route("/downloads")
 def list_downloads():
@@ -163,6 +175,9 @@ def download_ajax():
         song = songs[idx]
         raw_title = song.get("Song") or song.get("Title")
         artist = song["Artist"]
+        album = song.get("Album", "")
+        genres = song.get("Genres", "")
+
         formatted_title = format_title(raw_title)
         query = f"{artist} {raw_title}"
 
@@ -174,7 +189,7 @@ def download_ajax():
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": outtmpl,
-            "ffmpeg_location": "C:\\ffmpeg\\bin",  # adjust for platform
+            "ffmpeg_location": "C:\\ffmpeg\\bin",
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -188,13 +203,14 @@ def download_ajax():
 
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([f"ytsearch1:{query}"])
-            tag_mp3(output_file, formatted_title, artist)
+            tag_mp3(output_file, formatted_title, artist, album, genres)
 
         return jsonify({"success": True})
 
     except Exception as e:
         print(f"Download error: {e}")
         return jsonify({"success": False, "error": str(e)})
+
 
 if __name__ == "__main__":
     app.run(debug=True)
