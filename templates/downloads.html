@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Downloads</title>
+  <meta charset="UTF-8">
+  <title>Downloads</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h2>Downloaded MP3s</h2>
+  <div class="container">
+    <h1>Downloaded MP3s</h1>
     <ul>
-        {% for file in files %}
-        <li><a href="{{ url_for('download_file', filename=file) }}">{{ file }}</a></li>
-        {% endfor %}
+      {% for file in files %}
+      <li><a href="{{ url_for('download_file', filename=file) }}">{{ file }}</a></li>
+      {% endfor %}
     </ul>
-    <a href="/">Back to Upload</a>
+    <a href="/">Back</a>
+  </div>
 </body>
 </html>
