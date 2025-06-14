@@ -17,6 +17,7 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
 
 songs = []
+failed_downloads = set()
 
 # ---- Utilities ----
 
@@ -209,7 +210,54 @@ def download_ajax():
 
     except Exception as e:
         print(f"Download error: {e}")
+        failed_downloads.add(idx)
         return jsonify({"success": False, "error": str(e)})
+@app.route("/retry-failed", methods=["POST"])
+def retry_failed():
+    results = []
+    to_retry = list(failed_downloads)
+
+    for idx in to_retry:
+        try:
+            song = songs[idx]
+            raw_title = song.get("Song") or song.get("Title")
+            artist = song["Artist"]
+            album = song.get("Album", "")
+            genres = song.get("Genres", "")
+            formatted_title = format_title(raw_title)
+            query = f"{artist} {raw_title}"
+
+            sanitized = sanitize_filename(formatted_title)
+            base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
+            output_file = unique_path(base_path)
+            outtmpl = output_file.replace(".mp3", ".%(ext)s")
+
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": outtmpl,
+                "ffmpeg_location": "C:\\ffmpeg\\bin",
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+                "quiet": True,
+                "noplaylist": True,
+            }
+
+            with YoutubeDL(ydl_opts) as ydl:
+                ydl.download([f"ytsearch1:{query}"])
+                tag_mp3(output_file, formatted_title, artist, album, genres)
+
+            failed_downloads.discard(idx)
+            results.append({"index": idx, "success": True})
+        except Exception as e:
+            results.append({"index": idx, "success": False, "error": str(e)})
+
+    return jsonify(results)
+
 
 
 if __name__ == "__main__":

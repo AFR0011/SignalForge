@@ -34,3 +34,26 @@ downloadBtn?.addEventListener("click", () => {
     window.location.href = "/downloads";
   });
 });
+document.getElementById("retry-failed").addEventListener("click", function () {
+  fetch("/retry-failed", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  })
+    .then((response) => response.json())
+    .then((results) => {
+      results.forEach((r) => {
+        const row = document.querySelector(`tr[data-index="${r.index}"] .status`);
+        if (r.success) {
+          row.textContent = "Downloaded";
+          row.style.color = "green";
+        } else {
+          row.textContent = "Failed Again";
+          row.style.color = "red";
+        }
+      });
+    })
+    .catch((err) => console.error("Retry failed error:", err));
+});
+
