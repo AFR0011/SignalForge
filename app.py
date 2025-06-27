@@ -8,6 +8,8 @@ from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, error
 import requests
 from flask import jsonify, request as flask_request
+from math import isnan
+from mutagen.id3 import ID3NoHeaderError
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = "uploads"
@@ -18,8 +20,43 @@ os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
 
 songs = []
 failed_downloads = set()
+# failed_downloads = {5, 6, 8, 11, 12, 13, 14, 15, 21, 23, 25, 26, 29, 30, 40, 55, 66, 69, 75, 86, 110, 120, 127, 132, 148, 153, 154, 157, 161, 180, 181, 185, 187, 190, 191, 192, 194, 196, 197, 200, 203, 205, 206, 209, 210, 214, 216, 221, 222, 223, 224, 225, 227, 231, 234, 235, 242, 243, 244}
 
 # ---- Utilities ----
+
+def sanitize_metadata_field(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and isnan(value):
+        return ""
+    return str(value).strip()
+
+def has_matching_metadata(filepath, title, artist, album):
+    if not os.path.exists(filepath):
+        return False
+
+    try:
+        audio = EasyID3(filepath)
+        current_title = audio.get("title", [""])[0]
+        current_artist = audio.get("artist", [""])[0]
+        current_album = audio.get("album", [""])[0]
+        has_cover = False
+
+        try:
+            mp3 = MP3(filepath, ID3=ID3)
+            has_cover = any(frame for frame in mp3.tags.values() if isinstance(frame, APIC))
+        except ID3NoHeaderError:
+            has_cover = False
+
+        return (
+            current_title == title and
+            current_artist == artist and
+            current_album == album and
+            has_cover
+        )
+    except Exception as e:
+        print(f"[Metadata Check] Failed: {e}")
+        return False
 
 def sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name)
@@ -67,6 +104,12 @@ def fetch_cover_art(song_title, artist_name):
     return None
 
 def tag_mp3(filepath, title, artist, album=None, genres=None):
+
+    title = sanitize_metadata_field(title)
+    artist = sanitize_metadata_field(artist)
+    album = sanitize_metadata_field(album)
+    genres = sanitize_metadata_field(genres)
+
     try:
         audio = EasyID3(filepath)
     except Exception:
@@ -103,6 +146,66 @@ def tag_mp3(filepath, title, artist, album=None, genres=None):
             print(f"[Cover Art] Failed to embed: {e}")
 
 # ---- Routes ----
+
+@app.route("/retry-failed", methods=["POST"])
+def retry_failed_single():
+    try:
+        data = flask_request.get_json()
+        idx = int(data.get("index"))
+        if idx not in failed_downloads:
+            return jsonify({"success": False, "error": "Index not in failed list."})
+
+        song = songs[idx]
+        raw_title = song.get("Song") or song.get("Title")
+        artist = song["Artist"]
+        album = song.get("Album", "")
+        genres = song.get("Genres", "")
+
+        formatted_title = format_title(raw_title)
+        query = f"{artist} {raw_title}"
+        sanitized = sanitize_filename(formatted_title)
+        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
+        output_file = unique_path(base_path)
+        outtmpl = output_file.replace(".mp3", ".%(ext)s")
+
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": outtmpl,
+            "ffmpeg_location": "C:\\ffmpeg\\bin",
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }
+            ],
+            "quiet": True,
+            "noplaylist": True,
+        }
+
+        filename = f"{sanitized}.mp3"
+        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
+
+        # Check for existing valid file
+        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
+            failed_downloads.discard(idx)
+            return jsonify({"success": True, "note": "Skip"})
+
+        if os.path.exists(filepath):
+            tag_mp3(filepath, formatted_title, artist, album, genres)
+            failed_downloads.discard(idx)
+            return jsonify({"success": True, "note": "Update"})
+
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"ytsearch1:{query}"])
+            tag_mp3(output_file, formatted_title, artist, album, genres)
+
+        failed_downloads.discard(idx)
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"[Retry Error] {e}")
+        return jsonify({"success": False, "error": str(e)})
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -149,6 +252,20 @@ def download_song():
             "noplaylist": True,
         }
 
+        filename = f"{sanitized}.mp3"
+        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
+
+        # Skip download if file exists with correct metadata
+        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
+            print(f"[Skip] Already downloaded with full metadata: {filename}")
+            continue
+
+        # Proceed with download or metadata patch
+        if os.path.exists(filepath):
+            print(f"[Update Metadata] File exists but metadata incomplete: {filename}")
+            tag_mp3(filepath, formatted_title, artist, album, genres)
+            continue  # No need to redownload
+
         with YoutubeDL(ydl_opts) as ydl:
             try:
                 ydl.download([f"ytsearch1:{query}"])
@@ -157,7 +274,6 @@ def download_song():
                 print(f"[Download Error] {query}: {e}")
 
     return redirect("/downloads")
-
 
 @app.route("/downloads")
 def list_downloads():
@@ -202,6 +318,20 @@ def download_ajax():
             "noplaylist": True,
         }
 
+        filename = f"{sanitized}.mp3"
+        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
+
+        # Skip download if file exists with correct metadata
+        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
+            print(f"[Skip] Already downloaded with full metadata: {filename}")
+            return jsonify({"success": True, "note": "Skip"})
+
+        # Proceed with download or metadata patch
+        if os.path.exists(filepath):
+            print(f"[Update Metadata] File exists but metadata incomplete: {filename}")
+            tag_mp3(filepath, formatted_title, artist, album, genres)
+            return  jsonify({"success": True, "note": "Update"}) # No need to redownload
+
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([f"ytsearch1:{query}"])
             tag_mp3(output_file, formatted_title, artist, album, genres)
@@ -211,53 +341,70 @@ def download_ajax():
     except Exception as e:
         print(f"Download error: {e}")
         failed_downloads.add(idx)
-        return jsonify({"success": False, "error": str(e)})
-@app.route("/retry-failed", methods=["POST"])
-def retry_failed():
-    results = []
-    to_retry = list(failed_downloads)
+        return jsonify({"success": False, "error": str(e)})@app.route("/retry-failed", methods=["POST"])
 
-    for idx in to_retry:
-        try:
-            song = songs[idx]
-            raw_title = song.get("Song") or song.get("Title")
-            artist = song["Artist"]
-            album = song.get("Album", "")
-            genres = song.get("Genres", "")
-            formatted_title = format_title(raw_title)
-            query = f"{artist} {raw_title}"
+@app.route("/retry-failed-ajax", methods=["POST"])
+def retry_failed_ajax():
+    try:
+        data = flask_request.get_json()
+        idx = int(data.get("index"))
 
-            sanitized = sanitize_filename(formatted_title)
-            base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
-            output_file = unique_path(base_path)
-            outtmpl = output_file.replace(".mp3", ".%(ext)s")
+        if idx not in failed_downloads:
+            return jsonify({"success": False, "error": "Index not marked as failed."})
 
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": outtmpl,
-                "ffmpeg_location": "C:\\ffmpeg\\bin",
-                "postprocessors": [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                        "preferredquality": "192",
-                    }
-                ],
-                "quiet": True,
-                "noplaylist": True,
-            }
+        song = songs[idx]
+        raw_title = song.get("Song") or song.get("Title")
+        artist = song["Artist"]
+        album = song.get("Album", "")
+        genres = song.get("Genres", "")
 
-            with YoutubeDL(ydl_opts) as ydl:
-                ydl.download([f"ytsearch1:{query}"])
-                tag_mp3(output_file, formatted_title, artist, album, genres)
+        formatted_title = format_title(raw_title)
+        query = f"{artist} {raw_title}"
 
+        sanitized = sanitize_filename(formatted_title)
+        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
+        output_file = unique_path(base_path)
+        outtmpl = output_file.replace(".mp3", ".%(ext)s")
+
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": outtmpl,
+            "ffmpeg_location": "C:\\ffmpeg\\bin",
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }
+            ],
+            "quiet": True,
+            "noplaylist": True,
+        }
+
+        filename = f"{sanitized}.mp3"
+        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
+
+        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
+            print(f"[Retry Skip] Already downloaded with metadata: {filename}")
             failed_downloads.discard(idx)
-            results.append({"index": idx, "success": True})
-        except Exception as e:
-            results.append({"index": idx, "success": False, "error": str(e)})
+            return jsonify({"success": True, "note": "Skip"})
 
-    return jsonify(results)
+        if os.path.exists(filepath):
+            print(f"[Retry Metadata Update] Existing file: {filename}")
+            tag_mp3(filepath, formatted_title, artist, album, genres)
+            failed_downloads.discard(idx)
+            return jsonify({"success": True, "note": "Update"})
 
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"ytsearch1:{query}"])
+            tag_mp3(output_file, formatted_title, artist, album, genres)
+
+        failed_downloads.discard(idx)
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"[Retry Error] {e}")
+        return jsonify({"success": False, "error": str(e)})
 
 
 if __name__ == "__main__":

@@ -92,8 +92,14 @@
           });
           const result = await res.json();
           if (result.success) {
-            statusCell.textContent = "✅ Done";
             statusCell.className = "status success";
+            if (result.note && result.note == "Skip") {
+              statusCell.textContent = "✅ Skipped"
+            } else if (result.note && result.note == "Update") {
+              statusCell.textContent = "✅ Updated"
+            } else {
+              statusCell.textContent = "✅ Done"
+            }
           } else {
             statusCell.textContent = "❌ Failed";
             statusCell.className = "status error";
@@ -106,5 +112,49 @@
       }
     });
   </script>
+<script>
+  document.getElementById('retry-failed')?.addEventListener('click', async () => {
+    const rows = [...document.querySelectorAll('tr[data-index]')];
+
+    for (const row of rows) {
+      const idx = row.dataset.index;
+      const statusCell = row.querySelector('.status');
+      const currentStatus = statusCell.textContent.toLowerCase();
+
+      if (currentStatus.includes("failed") || currentStatus.includes("error")) {
+        statusCell.textContent = "Retrying...";
+        statusCell.className = "status downloading";
+
+        try {
+          const res = await fetch('/retry-failed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: idx })
+          });
+          const result = await res.json();
+          if (result.success) {
+            statusCell.className = "status success";
+            if (result.note === "Skip") {
+              statusCell.textContent = "✅ Skipped";
+            } else if (result.note === "Update") {
+              statusCell.textContent = "✅ Updated";
+            } else {
+              statusCell.textContent = "✅ Retried";
+            }
+          } else {
+            statusCell.textContent = "❌ Failed Again";
+            statusCell.className = "status error";
+          }
+        } catch (err) {
+          console.error(err);
+          statusCell.textContent = "❌ Retry Error";
+          statusCell.className = "status error";
+        }
+      }
+    }
+  });
+</script>
+
+
 </body>
 </html>
