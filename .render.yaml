@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: mp3-downloader
-    env: python
-    buildCommand: ./build.sh
-    startCommand: gunicorn app:app
-    pythonversion: 3.12.1
