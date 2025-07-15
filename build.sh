@@ -8,3 +8,6 @@ chmod +x bin/ffmpeg
 # Download yt-dlp binary
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp
 chmod +x bin/yt-dlp
+
+# Install Python Dependencies
+pip install -r requirements.txt
