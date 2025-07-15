@@ -12,15 +12,16 @@ from math import isnan
 from mutagen.id3 import ID3NoHeaderError
 
 app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = "uploads"
-app.config["DOWNLOAD_FOLDER"] = "downloads"
+app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
+app.config["DOWNLOAD_FOLDER"] = "/tmp/downloads" # For Railway
+
+
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
 
 songs = []
 failed_downloads = set()
-# failed_downloads = {5, 6, 8, 11, 12, 13, 14, 15, 21, 23, 25, 26, 29, 30, 40, 55, 66, 69, 75, 86, 110, 120, 127, 132, 148, 153, 154, 157, 161, 180, 181, 185, 187, 190, 191, 192, 194, 196, 197, 200, 203, 205, 206, 209, 210, 214, 216, 221, 222, 223, 224, 225, 227, 231, 234, 235, 242, 243, 244}
 
 # ---- Utilities ----
 
@@ -171,7 +172,7 @@ def retry_failed_single():
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": outtmpl,
-            "ffmpeg_location": "C:\\ffmpeg\\bin",
+            "ffmpeg_location": "./bin/ffmpeg",
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",

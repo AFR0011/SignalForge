@@ -10,7 +10,9 @@
     <h1>Downloaded MP3s</h1>
     <ul>
       {% for file in files %}
-      <li><a href="{{ url_for('download_file', filename=file) }}">{{ file }}</a></li>
+      <a class="btn btn-primary" href="{{ url_for('download_file', filename=file) }}" download>
+        Download
+      </a>      
       {% endfor %}
     </ul>
     <a href="/">Back</a>
