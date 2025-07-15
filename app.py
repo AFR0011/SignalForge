@@ -243,7 +243,7 @@ def download_song():
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": outtmpl,
-            "ffmpeg_location": "C:\\ffmpeg\\bin",
+            "ffmpeg_location": "./bin/ffmpeg",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
@@ -307,7 +307,7 @@ def download_ajax():
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": outtmpl,
-            "ffmpeg_location": "C:\\ffmpeg\\bin",
+            "ffmpeg_location": "./bin/ffmpeg",
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -370,7 +370,7 @@ def retry_failed_ajax():
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": outtmpl,
-            "ffmpeg_location": "C:\\ffmpeg\\bin",
+            "ffmpeg_location": "./bin/ffmpeg",
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
