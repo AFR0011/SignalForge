@@ -14,17 +14,10 @@ from mutagen.id3 import ID3, APIC, error
 import requests
 from math import isnan
 from mutagen.id3 import ID3NoHeaderError
-from dotenv import load_dotenv
 import zipfile
 from io import BytesIO
 
-# Load environment variables from .env file
-load_dotenv()
-
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
-if not app.config["SECRET_KEY"]:
-    raise ValueError("SECRET_KEY is not set in .env file or environment variables")
 
 app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
 app.config["DOWNLOAD_FOLDER"] = "/tmp/downloads"
