@@ -1,0 +1,7 @@
+{% if files %}
+{% for file in files %}
+<p><a href="/downloads/{{ file }}" class="btn btn-primary">{{ file }}</a></p>
+{% endfor %}
+{% else %}
+<p>No files downloaded yet.</p>
+{% endif %}

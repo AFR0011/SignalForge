@@ -1,94 +1,99 @@
 import os
 import re
+import logging
 import pandas as pd
-from flask import Flask, render_template, request, redirect, send_from_directory
-from yt_dlp import YoutubeDL
+from flask import Flask, render_template, request, send_from_directory, jsonify, send_file
+from flask_wtf.csrf import CSRFProtect
+from wtforms import FileField
+from flask_wtf import FlaskForm
+from flask_socketio import SocketIO, emit
+from yt_dlp import YoutubeDL, DownloadError
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, error
 import requests
-from flask import jsonify, request as flask_request
 from math import isnan
 from mutagen.id3 import ID3NoHeaderError
+from dotenv import load_dotenv
+import zipfile
+from io import BytesIO
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
+if not app.config["SECRET_KEY"]:
+    raise ValueError("SECRET_KEY is not set in .env file or environment variables")
+
 app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
-app.config["DOWNLOAD_FOLDER"] = "/tmp/downloads" # For Railway
+app.config["DOWNLOAD_FOLDER"] = "/tmp/downloads"
 
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
+# Initialize SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
 
 songs = []
 failed_downloads = set()
+successful_downloads = set()  # Track successful downloads
 
-# ---- Utilities ----
+# Form for CSV upload with CSRF
+class UploadForm(FlaskForm):
+    csv_file = FileField("CSV File")
+
+# ---- Utility Functions ----
 
 def sanitize_metadata_field(value):
+    """Sanitize metadata fields by handling None or NaN values and stripping whitespace."""
     if value is None:
         return ""
     if isinstance(value, float) and isnan(value):
         return ""
     return str(value).strip()
 
-def has_matching_metadata(filepath, title, artist, album):
-    if not os.path.exists(filepath):
-        return False
-
-    try:
-        audio = EasyID3(filepath)
-        current_title = audio.get("title", [""])[0]
-        current_artist = audio.get("artist", [""])[0]
-        current_album = audio.get("album", [""])[0]
-        has_cover = False
-
-        try:
-            mp3 = MP3(filepath, ID3=ID3)
-            has_cover = any(frame for frame in mp3.tags.values() if isinstance(frame, APIC))
-        except ID3NoHeaderError:
-            has_cover = False
-
-        return (
-            current_title == title and
-            current_artist == artist and
-            current_album == album and
-            has_cover
-        )
-    except Exception as e:
-        print(f"[Metadata Check] Failed: {e}")
-        return False
-
 def sanitize_filename(name):
+    """Remove invalid characters from filenames."""
     return re.sub(r'[\\/*?:"<>|]', "", name)
 
 def format_title(raw_title):
+    """Clean and format song titles by removing unwanted text and normalizing variations."""
     title = raw_title.strip()
-    # Remove (feat...) or (ft...)
     title = re.sub(r"\s*\((?:feat|ft)\.?[^)]*\)", "", title, flags=re.I)
-
-    # Normalize Slowed/Sped Up etc.
     if re.search(r"\bslowed\b", title, flags=re.I):
         title = re.sub(r"\s*(slowed|slowed remix)[^)]*$", "", title, flags=re.I)
         title = title.strip() + " (Slowed)"
     elif re.search(r"\b(sped up|speed up|speedup|speed-up)\b", title, flags=re.I):
         title = re.sub(r"\s*(sped up|speed up|speedup|speed-up)[^)]*$", "", title, flags=re.I)
         title = title.strip() + " (Sped Up)"
-    # Remove _ and -
     title = re.sub(r"\s?[_-]+\s?", " ", title, flags=re.I)
-    # Title Case (smart)
     title = title.lower().title()
     title = re.sub(r"('S)\b", "'s", title)
     title = re.sub(r"('T)\b", "'t", title)
     return title
 
 def unique_path(base_path):
-    path = base_path
+    """Generate a unique file path by appending a number if the file already exists."""
+    path = os.path.normpath(base_path)  # Normalize path separators
+    counter = 1
     while os.path.exists(f"{path}.mp3"):
-        path += " "
-    return f"{path}.mp3"
+        path = os.path.normpath(f"{base_path} ({counter})")
+        counter += 1
+    return path  # Return path without .mp3 extension
 
 def fetch_cover_art(song_title, artist_name):
+    """Fetch cover art from iTunes based on song title and artist."""
     query = f"{song_title} {artist_name}".strip().replace(" ", "+")
     url = f"https://itunes.apple.com/search?term={query}&entity=song&limit=1"
     try:
@@ -101,11 +106,16 @@ def fetch_cover_art(song_title, artist_name):
                 image_resp = requests.get(artwork_url, timeout=5)
                 return image_resp.content
     except Exception as e:
-        print(f"[Cover Art] Failed to fetch: {e}")
+        logging.error(f"[Cover Art] Failed to fetch: {e}")
     return None
 
-def tag_mp3(filepath, title, artist, album=None, genres=None):
-
+def tag_mp3_file(filepath, title, artist, album, genres):
+    """Tag an MP3 file with metadata and cover art."""
+    filepath = os.path.normpath(filepath)  # Normalize path
+    if not os.path.exists(filepath):
+        logging.error(f"Cannot tag file {filepath}: File does not exist")
+        raise FileNotFoundError(f"File {filepath} does not exist for tagging")
+    
     title = sanitize_metadata_field(title)
     artist = sanitize_metadata_field(artist)
     album = sanitize_metadata_field(album)
@@ -122,7 +132,6 @@ def tag_mp3(filepath, title, artist, album=None, genres=None):
     if album:
         audio["album"] = album
     if genres:
-        # genres can be comma-separated or a list
         if isinstance(genres, str):
             genres = [g.strip() for g in genres.split(",")]
         audio["genre"] = genres
@@ -142,271 +151,302 @@ def tag_mp3(filepath, title, artist, album=None, genres=None):
                 )
             )
             audio.save()
-            print(f"[Cover Art] Embedded for {filepath}")
+            logging.info(f"[Cover Art] Embedded for {filepath}")
         except error as e:
-            print(f"[Cover Art] Failed to embed: {e}")
+            logging.error(f"[Cover Art] Failed to embed: {e}")
 
-# ---- Routes ----
-
-@app.route("/retry-failed", methods=["POST"])
-def retry_failed_single():
+def check_existing_file(filepath, title, artist, album):
+    """Check if a file exists with matching metadata."""
+    filepath = os.path.normpath(filepath)  # Normalize path
+    if not os.path.exists(filepath):
+        return False
     try:
-        data = flask_request.get_json()
-        idx = int(data.get("index"))
-        if idx not in failed_downloads:
-            return jsonify({"success": False, "error": "Index not in failed list."})
-
-        song = songs[idx]
-        raw_title = song.get("Song") or song.get("Title")
-        artist = song["Artist"]
-        album = song.get("Album", "")
-        genres = song.get("Genres", "")
-
-        formatted_title = format_title(raw_title)
-        query = f"{artist} {raw_title}"
-        sanitized = sanitize_filename(formatted_title)
-        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
-        output_file = unique_path(base_path)
-        outtmpl = output_file.replace(".mp3", ".%(ext)s")
-
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": outtmpl,
-            "ffmpeg_location": "./bin/ffmpeg",
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
-            "quiet": True,
-            "noplaylist": True,
-        }
-
-        filename = f"{sanitized}.mp3"
-        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
-
-        # Check for existing valid file
-        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
-            failed_downloads.discard(idx)
-            return jsonify({"success": True, "note": "Skip"})
-
-        if os.path.exists(filepath):
-            tag_mp3(filepath, formatted_title, artist, album, genres)
-            failed_downloads.discard(idx)
-            return jsonify({"success": True, "note": "Update"})
-
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f"ytsearch1:{query}"])
-            tag_mp3(output_file, formatted_title, artist, album, genres)
-
-        failed_downloads.discard(idx)
-        return jsonify({"success": True})
-
+        audio = EasyID3(filepath)
+        current_title = audio.get("title", [""])[0]
+        current_artist = audio.get("artist", [""])[0]
+        current_album = audio.get("album", [""])[0]
+        has_cover = False
+        try:
+            mp3 = MP3(filepath, ID3=ID3)
+            has_cover = any(isinstance(frame, APIC) for frame in mp3.tags.values())
+        except ID3NoHeaderError:
+            has_cover = False
+        return (
+            current_title == title
+            and current_artist == artist
+            and current_album == album
+            and has_cover
+        )
     except Exception as e:
-        print(f"[Retry Error] {e}")
-        return jsonify({"success": False, "error": str(e)})
+        logging.error(f"[Metadata Check] Failed: {e}")
+        return False
 
-@app.route("/", methods=["GET", "POST"])
-def index():
-    global songs
-    if request.method == "POST":
-        file = request.files["csv_file"]
-        if file and file.filename.endswith(".csv"):
-            path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-            file.save(path)
-            df = pd.read_csv(path)
-            songs = df.to_dict(orient="records")
-            return render_template("index.html", songs=songs)
-    return render_template("index.html", songs=[])
+def download_song_from_youtube(query, output_file, idx):
+    """Download a song from YouTube using yt-dlp with progress updates."""
+    output_file = os.path.normpath(output_file)  # Normalize path
+    final_path = f"{output_file}.mp3"
+    logging.info(f"Downloading to: {final_path}")
 
-@app.route("/download", methods=["POST"])
-def download_song():
-    selected_indices = request.form.getlist("selected")
-    for idx in selected_indices:
-        idx = int(idx)
-        song = songs[idx]
-        raw_title = song.get("Song") or song.get("Title")
-        artist = song.get("Artist", "")
-        album = song.get("Album", "")
-        genres = song.get("Genres", "")
+    def progress_hook(d):
+        """Emit progress updates via SocketIO."""
+        if d["status"] == "downloading":
+            percent = d.get("downloaded_bytes", 0) / d.get("total_bytes", 1) * 100
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "downloading",
+                "progress": round(percent, 1),
+                "message": f"Downloading {percent:.1f}%"
+            })
+        elif d["status"] == "finished":
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "finished",
+                "message": "Processing metadata"
+            })
 
-        formatted_title = format_title(raw_title)
-        query = f"{artist} {raw_title}"
+    class MyLogger:
+        def debug(self, msg): pass
+        def warning(self, msg): logging.warning(msg)
+        def error(self, msg): logging.error(msg)
 
-        sanitized = sanitize_filename(formatted_title)
-        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
-        output_file = unique_path(base_path)
-        outtmpl = output_file.replace(".mp3", ".%(ext)s")
-
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": outtmpl,
-            "ffmpeg_location": "./bin/ffmpeg",
-            "postprocessors": [{
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": f"{output_file}.%(ext)s",  # Use normalized output_file
+        "ffmpeg_location": "./bin/ffmpeg",
+        "logger": MyLogger(),
+        "progress_hooks": [progress_hook],
+        "postprocessors": [
+            {
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
                 "preferredquality": "192",
-            }],
-            "quiet": True,
-            "noplaylist": True,
-        }
+            }
+        ],
+        "quiet": False,
+        "noplaylist": True,
+    }
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"ytsearch1:{query}"])
+        # Verify the file was created
+        if not os.path.exists(final_path):
+            raise FileNotFoundError(f"Download failed to create file: {final_path}")
+        logging.info(f"Successfully downloaded: {final_path}")
+    except DownloadError as e:
+        logging.error(f"yt-dlp download failed for {query}: {str(e)}")
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error during download for {query}: {str(e)}")
+        raise
 
-        filename = f"{sanitized}.mp3"
-        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
+# ---- Routes ----
 
-        # Skip download if file exists with correct metadata
-        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
-            print(f"[Skip] Already downloaded with full metadata: {filename}")
+@app.route("/", methods=["GET", "POST"])
+def index():
+    """Handle CSV upload and display song list."""
+    global songs
+    form = UploadForm()
+    if form.validate_on_submit():
+        file = form.csv_file.data
+        if file and file.filename.endswith(".csv"):
+            path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+            file.save(path)
+            try:
+                df = pd.read_csv(path)
+                required_columns = ["Song", "Artist"]
+                if not all(col in df.columns for col in required_columns):
+                    return "CSV missing required columns", 400
+                songs = df.to_dict(orient="records")
+                logging.info(f"Loaded {len(songs)} songs from CSV")
+                return render_template("index.html", songs=songs, form=form)
+            except Exception as e:
+                logging.error(f"Failed to process CSV: {e}")
+                return "Invalid CSV file", 400
+    return render_template("index.html", songs=[], form=form)
+
+@app.route("/download", methods=["POST"])
+def download_songs():
+    """Download selected songs and return status."""
+    global failed_downloads, successful_downloads
+    selected_indices = request.form.getlist("selected")
+    results = []
+    for idx in selected_indices:
+        idx = int(idx)
+        if idx >= len(songs):
+            logging.error(f"Invalid song index: {idx}")
+            results.append({"index": idx, "status": "failed", "error": "Invalid song index"})
+            failed_downloads.add(idx)
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "failed",
+                "message": "Invalid song index"
+            })
             continue
 
-        # Proceed with download or metadata patch
-        if os.path.exists(filepath):
-            print(f"[Update Metadata] File exists but metadata incomplete: {filename}")
-            tag_mp3(filepath, formatted_title, artist, album, genres)
-            continue  # No need to redownload
+        song = songs[idx]
+        raw_title = song.get("Song") or song.get("Title")
+        artist = song["Artist"]
+        album = song.get("Album", "")
+        genres = song.get("Genres", "")
 
-        with YoutubeDL(ydl_opts) as ydl:
-            try:
-                ydl.download([f"ytsearch1:{query}"])
-                tag_mp3(output_file, formatted_title, artist, album, genres)
-            except Exception as e:
-                print(f"[Download Error] {query}: {e}")
+        formatted_title = format_title(raw_title)
+        query = f"{artist} {raw_title}"
+        sanitized = sanitize_filename(formatted_title)
+        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
+        output_file = unique_path(base_path)
+        filepath = f"{output_file}.mp3"
+        logging.info(f"Attempting to download song {idx} to {filepath}")
 
-    return redirect("/downloads")
+        socketio.emit("download_progress", {
+            "index": idx,
+            "status": "downloading",
+            "progress": 0,
+            "message": "Starting download"
+        })
 
-@app.route("/downloads")
-def list_downloads():
-    files = os.listdir(app.config["DOWNLOAD_FOLDER"])
-    return render_template("downloads.html", files=files)
+        try:
+            if not check_existing_file(filepath, formatted_title, artist, album):
+                download_song_from_youtube(query, output_file, idx)
+                tag_mp3_file(filepath, formatted_title, artist, album, genres)
+            else:
+                logging.info(f"Skipping download for song {idx}: File exists with matching metadata")
+                socketio.emit("download_progress", {
+                    "index": idx,
+                    "status": "success",
+                    "message": "Downloaded (already exists)"
+                })
+            results.append({"index": idx, "status": "success"})
+            failed_downloads.discard(idx)
+            successful_downloads.add((idx, filepath))  # Track successful download
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "success",
+                "message": "Downloaded"
+            })
+        except FileNotFoundError as e:
+            logging.error(f"Download failed for song {idx}: {str(e)}")
+            results.append({"index": idx, "status": "failed", "error": str(e)})
+            failed_downloads.add(idx)
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "failed",
+                "message": str(e)
+            })
+        except Exception as e:
+            logging.error(f"Download failed for song {idx}: {str(e)}")
+            results.append({"index": idx, "status": "failed", "error": str(e)})
+            failed_downloads.add(idx)
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "failed",
+                "message": str(e)
+            })
+    return jsonify({"results": results})
+
+@app.route("/retry-failed", methods=["POST"])
+def retry_failed_downloads():
+    """Retry downloading songs that previously failed."""
+    global failed_downloads, successful_downloads
+    results = []
+    for idx in list(failed_downloads):
+        if idx >= len(songs):
+            logging.error(f"Invalid song index for retry: {idx}")
+            results.append({"index": idx, "status": "failed", "error": "Invalid song index"})
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "failed",
+                "message": "Invalid song index"
+            })
+            continue
+
+        song = songs[idx]
+        raw_title = song.get("Song") or song.get("Title")
+        artist = song["Artist"]
+        album = song.get("Album", "")
+        genres = song.get("Genres", "")
+
+        formatted_title = format_title(raw_title)
+        query = f"{artist} {raw_title}"
+        sanitized = sanitize_filename(formatted_title)
+        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
+        output_file = unique_path(base_path)
+        filepath = f"{output_file}.mp3"
+        logging.info(f"Retrying download for song {idx} to {filepath}")
+
+        socketio.emit("download_progress", {
+            "index": idx,
+            "status": "downloading",
+            "progress": 0,
+            "message": "Starting retry"
+        })
+
+        try:
+            if not check_existing_file(filepath, formatted_title, artist, album):
+                download_song_from_youtube(query, output_file, idx)
+                tag_mp3_file(filepath, formatted_title, artist, album, genres)
+            else:
+                logging.info(f"Skipping retry for song {idx}: File exists with matching metadata")
+                socketio.emit("download_progress", {
+                    "index": idx,
+                    "status": "success",
+                    "message": "Downloaded (already exists)"
+                })
+            failed_downloads.discard(idx)
+            successful_downloads.add((idx, filepath))  # Track successful download
+            results.append({"index": idx, "status": "success"})
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "success",
+                "message": "Downloaded"
+            })
+        except FileNotFoundError as e:
+            logging.error(f"Retry failed for song {idx}: {str(e)}")
+            results.append({"index": idx, "status": "failed", "error": str(e)})
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "failed",
+                "message": str(e)
+            })
+        except Exception as e:
+            logging.error(f"Retry failed for song {idx}: {str(e)}")
+            results.append({"index": idx, "status": "failed", "error": str(e)})
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "failed",
+                "message": str(e)
+            })
+    return jsonify(results)
 
 @app.route("/downloads/<filename>")
 def download_file(filename):
+    """Serve a downloaded MP3 file."""
     return send_from_directory(app.config["DOWNLOAD_FOLDER"], filename, as_attachment=True)
 
-@app.route("/download-ajax", methods=["POST"])
-def download_ajax():
-    try:
-        data = flask_request.get_json()
-        idx = int(data.get("index"))
-        song = songs[idx]
-        raw_title = song.get("Song") or song.get("Title")
-        artist = song["Artist"]
-        album = song.get("Album", "")
-        genres = song.get("Genres", "")
+@app.route("/downloads/list")
+def partial_downloads_list():
+    """Render a partial list of downloaded files."""
+    files = os.listdir(app.config["DOWNLOAD_FOLDER"])
+    return render_template("partials/download_list.html", files=files)
 
-        formatted_title = format_title(raw_title)
-        query = f"{artist} {raw_title}"
-
-        sanitized = sanitize_filename(formatted_title)
-        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
-        output_file = unique_path(base_path)
-        outtmpl = output_file.replace(".mp3", ".%(ext)s")
-
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": outtmpl,
-            "ffmpeg_location": "./bin/ffmpeg",
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
-            "quiet": True,
-            "noplaylist": True,
-        }
-
-        filename = f"{sanitized}.mp3"
-        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
-
-        # Skip download if file exists with correct metadata
-        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
-            print(f"[Skip] Already downloaded with full metadata: {filename}")
-            return jsonify({"success": True, "note": "Skip"})
-
-        # Proceed with download or metadata patch
-        if os.path.exists(filepath):
-            print(f"[Update Metadata] File exists but metadata incomplete: {filename}")
-            tag_mp3(filepath, formatted_title, artist, album, genres)
-            return  jsonify({"success": True, "note": "Update"}) # No need to redownload
-
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f"ytsearch1:{query}"])
-            tag_mp3(output_file, formatted_title, artist, album, genres)
-
-        return jsonify({"success": True})
-
-    except Exception as e:
-        print(f"Download error: {e}")
-        failed_downloads.add(idx)
-        return jsonify({"success": False, "error": str(e)})@app.route("/retry-failed", methods=["POST"])
-
-@app.route("/retry-failed-ajax", methods=["POST"])
-def retry_failed_ajax():
-    try:
-        data = flask_request.get_json()
-        idx = int(data.get("index"))
-
-        if idx not in failed_downloads:
-            return jsonify({"success": False, "error": "Index not marked as failed."})
-
-        song = songs[idx]
-        raw_title = song.get("Song") or song.get("Title")
-        artist = song["Artist"]
-        album = song.get("Album", "")
-        genres = song.get("Genres", "")
-
-        formatted_title = format_title(raw_title)
-        query = f"{artist} {raw_title}"
-
-        sanitized = sanitize_filename(formatted_title)
-        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
-        output_file = unique_path(base_path)
-        outtmpl = output_file.replace(".mp3", ".%(ext)s")
-
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": outtmpl,
-            "ffmpeg_location": "./bin/ffmpeg",
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
-            "quiet": True,
-            "noplaylist": True,
-        }
-
-        filename = f"{sanitized}.mp3"
-        filepath = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
-
-        if os.path.exists(filepath) and has_matching_metadata(filepath, formatted_title, artist, album):
-            print(f"[Retry Skip] Already downloaded with metadata: {filename}")
-            failed_downloads.discard(idx)
-            return jsonify({"success": True, "note": "Skip"})
-
-        if os.path.exists(filepath):
-            print(f"[Retry Metadata Update] Existing file: {filename}")
-            tag_mp3(filepath, formatted_title, artist, album, genres)
-            failed_downloads.discard(idx)
-            return jsonify({"success": True, "note": "Update"})
-
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f"ytsearch1:{query}"])
-            tag_mp3(output_file, formatted_title, artist, album, genres)
-
-        failed_downloads.discard(idx)
-        return jsonify({"success": True})
-
-    except Exception as e:
-        print(f"[Retry Error] {e}")
-        return jsonify({"success": False, "error": str(e)})
-
+@app.route("/download_zip", methods=["POST"])
+def download_zip():
+    """Create and serve a ZIP file of all downloaded MP3s."""
+    global successful_downloads
+    memory_file = BytesIO()
+    with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        for idx, filepath in successful_downloads:
+            if os.path.exists(filepath):
+                arcname = os.path.basename(filepath)
+                zf.write(filepath, arcname=arcname)
+            else:
+                logging.warning(f"File {filepath} not found for ZIP")
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="downloaded_songs.zip"
+    )
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    socketio.run(app, debug=True)

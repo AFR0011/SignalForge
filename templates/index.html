@@ -4,26 +4,14 @@
   <meta charset="UTF-8">
   <title>Song Downloader</title>
   <link rel="stylesheet" href="/static/style.css">
-  <style>
-    body { font-family: sans-serif; }
-    .container { width: 80%; margin: 0 auto; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { padding: 10px; border: 1px solid #ccc; text-align: left; }
-    th input[type="checkbox"] { transform: scale(1.2); }
-    .controls { margin-top: 15px; }
-    button { padding: 8px 14px; margin-right: 10px; }
-    .status.pending { color: gray; }
-    .status.downloading { color: orange; }
-    .status.success { color: green; }
-    .status.error { color: red; }
-  </style>
 </head>
 <body>
   <div class="container">
-    <h1>🎵 Song Downloader</h1>
+    <h1>Song Downloader</h1>
 
     <form id="upload-form" method="POST" enctype="multipart/form-data">
-      <input type="file" name="csv_file" required>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="file" name="csv_file" accept=".csv" required>
       <button type="submit">Upload CSV</button>
     </form>
 
@@ -33,6 +21,7 @@
       <button id="select-all">Select All</button>
       <button id="download-selected">Download Selected</button>
       <button id="retry-failed">Retry Failed</button>
+      <button id="download-zip" style="display: none;">Download All as ZIP</button>
     </div>
 
     <table id="songs-table">
@@ -50,7 +39,10 @@
           <td><input type="checkbox" class="row-checkbox" data-index="{{ loop.index0 }}"></td>
           <td>{{ song.Song }}</td>
           <td>{{ song.Artist }}</td>
-          <td class="status pending">Pending</td>
+          <td class="status pending">
+            <span class="status-text">Pending</span>
+            <a class="download-btn btn btn-primary" style="display: none;" href="#">Download</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -58,103 +50,7 @@
     {% endif %}
   </div>
 
-  <script>
-    document.getElementById('select-all')?.addEventListener('click', () => {
-      document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = true);
-    });
-
-    document.getElementById('master-checkbox')?.addEventListener('change', (e) => {
-      const checked = e.target.checked;
-      document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = checked);
-    });
-
-    document.getElementById('download-selected')?.addEventListener('click', async () => {
-      const selected = [...document.querySelectorAll('.row-checkbox')]
-        .filter(cb => cb.checked)
-        .map(cb => cb.dataset.index);
-
-      if (selected.length === 0) {
-        alert("Please select at least one song.");
-        return;
-      }
-
-      for (const idx of selected) {
-        const row = document.querySelector(`tr[data-index="${idx}"]`);
-        const statusCell = row.querySelector('.status');
-        statusCell.textContent = "Downloading...";
-        statusCell.className = "status downloading";
-
-        try {
-          const res = await fetch('/download-ajax', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ index: idx })
-          });
-          const result = await res.json();
-          if (result.success) {
-            statusCell.className = "status success";
-            if (result.note && result.note == "Skip") {
-              statusCell.textContent = "✅ Skipped"
-            } else if (result.note && result.note == "Update") {
-              statusCell.textContent = "✅ Updated"
-            } else {
-              statusCell.textContent = "✅ Done"
-            }
-          } else {
-            statusCell.textContent = "❌ Failed";
-            statusCell.className = "status error";
-          }
-        } catch (err) {
-          console.error(err);
-          statusCell.textContent = "❌ Error";
-          statusCell.className = "status error";
-        }
-      }
-    });
-  </script>
-<script>
-  document.getElementById('retry-failed')?.addEventListener('click', async () => {
-    const rows = [...document.querySelectorAll('tr[data-index]')];
-
-    for (const row of rows) {
-      const idx = row.dataset.index;
-      const statusCell = row.querySelector('.status');
-      const currentStatus = statusCell.textContent.toLowerCase();
-
-      if (currentStatus.includes("failed") || currentStatus.includes("error")) {
-        statusCell.textContent = "Retrying...";
-        statusCell.className = "status downloading";
-
-        try {
-          const res = await fetch('/retry-failed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ index: idx })
-          });
-          const result = await res.json();
-          if (result.success) {
-            statusCell.className = "status success";
-            if (result.note === "Skip") {
-              statusCell.textContent = "✅ Skipped";
-            } else if (result.note === "Update") {
-              statusCell.textContent = "✅ Updated";
-            } else {
-              statusCell.textContent = "✅ Retried";
-            }
-          } else {
-            statusCell.textContent = "❌ Failed Again";
-            statusCell.className = "status error";
-          }
-        } catch (err) {
-          console.error(err);
-          statusCell.textContent = "❌ Retry Error";
-          statusCell.className = "status error";
-        }
-      }
-    }
-  });
-</script>
-
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/static/app.js"></script>
 </body>
 </html>
