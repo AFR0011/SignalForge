@@ -16,8 +16,13 @@ from math import isnan
 from mutagen.id3 import ID3NoHeaderError
 import zipfile
 from io import BytesIO
+from dotenv import load_dotenv
 
 app = Flask(__name__)
+
+# Load environment variables and configure secret key for CSRF/session
+load_dotenv()
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
 app.config["DOWNLOAD_FOLDER"] = "/tmp/downloads"
