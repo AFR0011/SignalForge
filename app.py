@@ -37,8 +37,7 @@ csrf = CSRFProtect(app)
 # Initialize SocketIO
 socketio = SocketIO(
     app,
-    cors_allowed_origins=["https://spotifydownautomater.onrender.com", "http://localhost:5000", "http://127.0.0.1:5000"],
-    async_mode="eventlet"
+    cors_allowed_origins=["https://spotifydownautomater.onrender.com", "http://localhost:5000", "http://127.0.0.1:5000"]
 )
 
 # Configure logging
