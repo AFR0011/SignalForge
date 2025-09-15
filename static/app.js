@@ -91,6 +91,7 @@ downloadBtn?.addEventListener("click", () => {
   // Submit form via fetch
   fetch("/download", {
     method: "POST",
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "X-CSRFToken": csrfToken,
@@ -125,6 +126,7 @@ retryBtn?.addEventListener("click", () => {
 
   fetch("/retry-failed", {
     method: "POST",
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       "X-CSRFToken": csrfToken,
@@ -150,6 +152,7 @@ downloadZipBtn?.addEventListener("click", () => {
 
   fetch("/download_zip", {
     method: "POST",
+    credentials: "same-origin",
     headers: {
       "X-CSRFToken": csrfToken,
     },

@@ -3,7 +3,7 @@ import re
 import logging
 import pandas as pd
 from flask import Flask, render_template, request, send_from_directory, jsonify, send_file
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, validate_csrf
 from wtforms import FileField
 from flask_wtf import FlaskForm
 from flask_socketio import SocketIO, emit
@@ -23,6 +23,10 @@ app = Flask(__name__)
 # Load environment variables and configure secret key for CSRF/session
 load_dotenv()
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+app.config["WTF_CSRF_CHECK_DEFAULT"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+if os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_URL"):
+    app.config["SESSION_COOKIE_SECURE"] = True
 
 app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
 app.config["DOWNLOAD_FOLDER"] = "/tmp/downloads"
@@ -31,7 +35,11 @@ app.config["DOWNLOAD_FOLDER"] = "/tmp/downloads"
 csrf = CSRFProtect(app)
 
 # Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=["https://spotifydownautomater.onrender.com", "http://localhost:5000", "http://127.0.0.1:5000"],
+    async_mode="eventlet"
+)
 
 # Configure logging
 logging.basicConfig(
@@ -50,6 +58,16 @@ successful_downloads = set()  # Track successful downloads
 # Form for CSV upload with CSRF
 class UploadForm(FlaskForm):
     csv_file = FileField("CSV File")
+
+
+def require_csrf():
+    token = request.headers.get("X-CSRFToken") or request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    try:
+        validate_csrf(token)
+        return True
+    except Exception as e:
+        logging.warning(f"CSRF validation failed: {e}")
+        return False
 
 # ---- Utility Functions ----
 
@@ -265,6 +283,8 @@ def index():
 @app.route("/download", methods=["POST"])
 def download_songs():
     """Download selected songs and return status."""
+    if not require_csrf():
+        return "CSRF token missing or invalid", 400
     global failed_downloads, successful_downloads
     selected_indices = request.form.getlist("selected")
     results = []
@@ -344,6 +364,8 @@ def download_songs():
 @app.route("/retry-failed", methods=["POST"])
 def retry_failed_downloads():
     """Retry downloading songs that previously failed."""
+    if not require_csrf():
+        return "CSRF token missing or invalid", 400
     global failed_downloads, successful_downloads
     results = []
     for idx in list(failed_downloads):
@@ -429,6 +451,8 @@ def partial_downloads_list():
 @app.route("/download_zip", methods=["POST"])
 def download_zip():
     """Create and serve a ZIP file of all downloaded MP3s."""
+    if not require_csrf():
+        return "CSRF token missing or invalid", 400
     global successful_downloads
     memory_file = BytesIO()
     with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
