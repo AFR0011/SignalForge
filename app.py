@@ -17,6 +17,7 @@ from mutagen.id3 import ID3NoHeaderError
 import zipfile
 from io import BytesIO
 from dotenv import load_dotenv
+from threading import Lock
 
 app = Flask(__name__)
 
@@ -54,9 +55,89 @@ songs = []
 failed_downloads = set()
 successful_downloads = set()  # Track successful downloads
 
+download_sets_lock = Lock()
+
 # Form for CSV upload with CSRF
 class UploadForm(FlaskForm):
     csv_file = FileField("CSV File")
+
+
+def process_song(idx: int):
+    global failed_downloads, successful_downloads, songs
+
+    # Validate index
+    if idx < 0 or idx >= len(songs):
+        logging.error(f"Invalid song index: {idx}")
+        with download_sets_lock:
+            failed_downloads.add(idx)
+        socketio.emit("download_progress", {
+            "index": idx,
+            "status": "failed",
+            "message": "Invalid song index"
+        })
+        return
+
+    song = songs[idx]
+    raw_title = song.get("Song") or song.get("Title")
+    artist = song["Artist"]
+    album = song.get("Album", "")
+    genres = song.get("Genres", "")
+
+    formatted_title = format_title(raw_title)
+    sanitized = sanitize_filename(formatted_title)
+    base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
+    output_file = unique_path(base_path)
+    filepath = f"{output_file}.mp3"
+
+    logging.info(f"Processing download for song {idx} to {filepath}")
+
+    socketio.emit("download_progress", {
+        "index": idx,
+        "status": "downloading",
+        "progress": 0,
+        "message": "Starting download"
+    })
+
+    try:
+        if not check_existing_file(filepath, formatted_title, artist, album):
+            query = f"{artist} {raw_title}"
+            download_song_from_youtube(query, output_file, idx)
+            tag_mp3_file(filepath, formatted_title, artist, album, genres)
+        else:
+            logging.info(f"Skipping download for song {idx}: File exists with matching metadata")
+            socketio.emit("download_progress", {
+                "index": idx,
+                "status": "success",
+                "message": "Downloaded (already exists)"
+            })
+
+        with download_sets_lock:
+            failed_downloads.discard(idx)
+            successful_downloads.add((idx, filepath))
+
+        socketio.emit("download_progress", {
+            "index": idx,
+            "status": "success",
+            "message": "Downloaded"
+        })
+    except FileNotFoundError as e:
+        logging.error(f"Download failed for song {idx}: {str(e)}")
+        with download_sets_lock:
+            failed_downloads.add(idx)
+        socketio.emit("download_progress", {
+            "index": idx,
+            "status": "failed",
+            "message": str(e)
+        })
+    except Exception as e:
+        logging.error(f"Download failed for song {idx}: {str(e)}")
+        with download_sets_lock:
+            failed_downloads.add(idx)
+        socketio.emit("download_progress", {
+            "index": idx,
+            "status": "failed",
+            "message": str(e)
+        })
 
 
 def require_csrf():
@@ -281,160 +362,34 @@ def index():
 
 @app.route("/download", methods=["POST"])
 def download_songs():
-    """Download selected songs and return status."""
+    """Start background downloads and return immediately."""
     if not require_csrf():
         return "CSRF token missing or invalid", 400
-    global failed_downloads, successful_downloads
+
     selected_indices = request.form.getlist("selected")
-    results = []
-    for idx in selected_indices:
-        idx = int(idx)
-        if idx >= len(songs):
-            logging.error(f"Invalid song index: {idx}")
-            results.append({"index": idx, "status": "failed", "error": "Invalid song index"})
-            failed_downloads.add(idx)
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "failed",
-                "message": "Invalid song index"
-            })
-            continue
+    try:
+        indices = [int(i) for i in selected_indices]
+    except Exception:
+        return jsonify({"error": "invalid input"}), 400
 
-        song = songs[idx]
-        raw_title = song.get("Song") or song.get("Title")
-        artist = song["Artist"]
-        album = song.get("Album", "")
-        genres = song.get("Genres", "")
+    for idx in indices:
+        socketio.start_background_task(process_song, idx)
 
-        formatted_title = format_title(raw_title)
-        query = f"{artist} {raw_title}"
-        sanitized = sanitize_filename(formatted_title)
-        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
-        output_file = unique_path(base_path)
-        filepath = f"{output_file}.mp3"
-        logging.info(f"Attempting to download song {idx} to {filepath}")
-
-        socketio.emit("download_progress", {
-            "index": idx,
-            "status": "downloading",
-            "progress": 0,
-            "message": "Starting download"
-        })
-
-        try:
-            if not check_existing_file(filepath, formatted_title, artist, album):
-                download_song_from_youtube(query, output_file, idx)
-                tag_mp3_file(filepath, formatted_title, artist, album, genres)
-            else:
-                logging.info(f"Skipping download for song {idx}: File exists with matching metadata")
-                socketio.emit("download_progress", {
-                    "index": idx,
-                    "status": "success",
-                    "message": "Downloaded (already exists)"
-                })
-            results.append({"index": idx, "status": "success"})
-            failed_downloads.discard(idx)
-            successful_downloads.add((idx, filepath))  # Track successful download
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "success",
-                "message": "Downloaded"
-            })
-        except FileNotFoundError as e:
-            logging.error(f"Download failed for song {idx}: {str(e)}")
-            results.append({"index": idx, "status": "failed", "error": str(e)})
-            failed_downloads.add(idx)
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "failed",
-                "message": str(e)
-            })
-        except Exception as e:
-            logging.error(f"Download failed for song {idx}: {str(e)}")
-            results.append({"index": idx, "status": "failed", "error": str(e)})
-            failed_downloads.add(idx)
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "failed",
-                "message": str(e)
-            })
-    return jsonify({"results": results})
+    return jsonify({"started": indices})
 
 @app.route("/retry-failed", methods=["POST"])
 def retry_failed_downloads():
-    """Retry downloading songs that previously failed."""
+    """Retry downloading songs that previously failed (background)."""
     if not require_csrf():
         return "CSRF token missing or invalid", 400
-    global failed_downloads, successful_downloads
-    results = []
-    for idx in list(failed_downloads):
-        if idx >= len(songs):
-            logging.error(f"Invalid song index for retry: {idx}")
-            results.append({"index": idx, "status": "failed", "error": "Invalid song index"})
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "failed",
-                "message": "Invalid song index"
-            })
-            continue
 
-        song = songs[idx]
-        raw_title = song.get("Song") or song.get("Title")
-        artist = song["Artist"]
-        album = song.get("Album", "")
-        genres = song.get("Genres", "")
+    with download_sets_lock:
+        indices = list(failed_downloads)
 
-        formatted_title = format_title(raw_title)
-        query = f"{artist} {raw_title}"
-        sanitized = sanitize_filename(formatted_title)
-        base_path = os.path.join(app.config["DOWNLOAD_FOLDER"], sanitized)
-        output_file = unique_path(base_path)
-        filepath = f"{output_file}.mp3"
-        logging.info(f"Retrying download for song {idx} to {filepath}")
+    for idx in indices:
+        socketio.start_background_task(process_song, idx)
 
-        socketio.emit("download_progress", {
-            "index": idx,
-            "status": "downloading",
-            "progress": 0,
-            "message": "Starting retry"
-        })
-
-        try:
-            if not check_existing_file(filepath, formatted_title, artist, album):
-                download_song_from_youtube(query, output_file, idx)
-                tag_mp3_file(filepath, formatted_title, artist, album, genres)
-            else:
-                logging.info(f"Skipping retry for song {idx}: File exists with matching metadata")
-                socketio.emit("download_progress", {
-                    "index": idx,
-                    "status": "success",
-                    "message": "Downloaded (already exists)"
-                })
-            failed_downloads.discard(idx)
-            successful_downloads.add((idx, filepath))  # Track successful download
-            results.append({"index": idx, "status": "success"})
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "success",
-                "message": "Downloaded"
-            })
-        except FileNotFoundError as e:
-            logging.error(f"Retry failed for song {idx}: {str(e)}")
-            results.append({"index": idx, "status": "failed", "error": str(e)})
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "failed",
-                "message": str(e)
-            })
-        except Exception as e:
-            logging.error(f"Retry failed for song {idx}: {str(e)}")
-            results.append({"index": idx, "status": "failed", "error": str(e)})
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "failed",
-                "message": str(e)
-            })
-    return jsonify(results)
+    return jsonify({"started": indices})
 
 @app.route("/downloads/<filename>")
 def download_file(filename):
