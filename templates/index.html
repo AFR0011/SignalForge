@@ -1,56 +1,53 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Song Downloader</title>
-  <link rel="stylesheet" href="/static/style.css">
+    <title>Song Downloader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Song Downloader</h1>
+    <div class="container">
+        <h1>Upload CSV</h1>
+        <form method="POST" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}  <!-- Adds <input name="csrf_token"> -->
+            {{ form.csv_file.label }} {{ form.csv_file }}
+            <button type="submit">Upload</button>
+        </form>
 
-    <form id="upload-form" method="POST" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="file" name="csv_file" accept=".csv" required>
-      <button type="submit">Upload CSV</button>
-    </form>
-
-    {% if songs %}
-    <hr>
-    <div class="controls">
-      <button id="select-all">Select All</button>
-      <button id="download-selected">Download Selected</button>
-      <button id="retry-failed">Retry Failed</button>
-      <button id="download-zip" style="display: none;">Download All as ZIP</button>
+        {% if songs %}
+        <div class="controls">
+            <button id="select-all">Select All</button>
+            <button id="download-selected">Download Selected</button>
+            <button id="retry-failed">Retry Failed</button>
+            <button id="download-zip" style="display: none;">Download All as ZIP</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="master-checkbox"></th>
+                    <th>Song</th>
+                    <th>Artist</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for i, song in songs|enumerate %}
+                <tr data-index="{{ i }}">
+                    <td><input type="checkbox" class="row-checkbox"></td>
+                    <td>{{ song.Song }}</td>
+                    <td>{{ song.Artist }}</td>
+                    <td class="status">
+                        <span class="status-text">Pending</span>
+                        <a class="btn btn-primary download-btn" style="display: none;">Download</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
     </div>
-
-    <table id="songs-table">
-      <thead>
-        <tr>
-          <th><input type="checkbox" id="master-checkbox"></th>
-          <th>Song</th>
-          <th>Artist</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for song in songs %}
-        <tr data-index="{{ loop.index0 }}">
-          <td><input type="checkbox" class="row-checkbox" data-index="{{ loop.index0 }}"></td>
-          <td>{{ song.Song }}</td>
-          <td>{{ song.Artist }}</td>
-          <td class="status pending">
-            <span class="status-text">Pending</span>
-            <a class="download-btn btn btn-primary" style="display: none;" href="#">Download</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-  </div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
-  <script src="/static/app.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

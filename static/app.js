@@ -1,6 +1,10 @@
 // Initialize SocketIO
 const socket = io();
 
+socket.on("connect_error", () => {
+  setTimeout(() => socket.connect(), 1000);
+});
+
 // Select DOM elements
 const master = document.getElementById("master-checkbox");
 const rows = document.querySelectorAll(".row-checkbox");
@@ -14,7 +18,9 @@ let hasSuccessfulDownloads = false;
 const getCsrfToken = () => {
   const tokenElement = document.querySelector('input[name="csrf_token"]');
   if (!tokenElement || !tokenElement.value) {
-    console.error("CSRF token not found. Ensure the form is rendered correctly.");
+    console.error(
+      "CSRF token not found. Ensure the form is rendered correctly."
+    );
     alert("CSRF token missing. Please refresh the page and try again.");
     return null;
   }
@@ -36,24 +42,25 @@ selectAllBtn?.addEventListener("click", () => {
 socket.on("download_progress", (data) => {
   const row = document.querySelector(`tr[data-index='${data.index}'] .status`);
   if (!row) return;
-
   const statusText = row.querySelector(".status-text");
   const downloadBtn = row.querySelector(".download-btn");
   if (!statusText || !downloadBtn) return;
-
   statusText.textContent = data.message;
-  if (data.status === "downloading") {
-    row.className = "status downloading";
-    downloadBtn.style.display = "none";
+  if (data.status === "downloading" && data.progress) {
+    statusText.innerHTML = `Downloading <progress value="${data.progress}" max="100"></progress> ${data.progress}%`;
   } else if (data.status === "success") {
     row.className = "status success";
     downloadBtn.style.display = "inline-block";
     // Set href based on sanitized song title
-    const song = rows[data.index].closest("tr").querySelector("td:nth-child(2)").textContent;
+    const song = rows[data.index]
+      .closest("tr")
+      .querySelector("td:nth-child(2)").textContent;
     const sanitized = song.replace(/[\\/*?:"<>|]/g, "");
     downloadBtn.href = `/downloads/${encodeURIComponent(sanitized)}.mp3`;
     hasSuccessfulDownloads = true;
-    downloadZipBtn.style.display = hasSuccessfulDownloads ? "inline-block" : "none";
+    downloadZipBtn.style.display = hasSuccessfulDownloads
+      ? "inline-block"
+      : "none";
   } else if (data.status === "failed") {
     row.className = "status error";
     downloadBtn.style.display = "none";
@@ -65,9 +72,16 @@ socket.on("download_progress", (data) => {
 
 // Download selected songs
 downloadBtn?.addEventListener("click", () => {
+  downloadBtn.disabled = true;
+  downloadBtn.textContent = "Processing...";
+
   const selected = [...rows]
     .map((chk, i) => (chk.checked ? i : -1))
     .filter((i) => i >= 0);
+  if (selected.length > 20) {
+    alert("Please select up to 20 songs to avoid performance issues.");
+    return;
+  }
   if (!selected.length) {
     alert("Please select at least one song.");
     return;
@@ -116,6 +130,10 @@ downloadBtn?.addEventListener("click", () => {
         }
       });
       alert("Download failed. Please try again.");
+    })
+    .finally(() => {
+      downloadBtn.disabled = false;
+      downloadBtn.textContent = "Download Selected";
     });
 });
 
@@ -133,7 +151,8 @@ retryBtn?.addEventListener("click", () => {
     },
   })
     .then((response) => {
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      if (!response.ok)
+        throw new Error(`HTTP error! Status: ${response.status}`);
       return response.json();
     })
     .then((results) => {
@@ -158,7 +177,8 @@ downloadZipBtn?.addEventListener("click", () => {
     },
   })
     .then((response) => {
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      if (!response.ok)
+        throw new Error(`HTTP error! Status: ${response.status}`);
       return response.blob();
     })
     .then((blob) => {

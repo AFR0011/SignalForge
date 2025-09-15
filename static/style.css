@@ -98,3 +98,14 @@ button:hover {
 #download-zip:hover {
   background: #138496;
 }
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}

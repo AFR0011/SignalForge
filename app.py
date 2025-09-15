@@ -2,7 +2,14 @@ import os
 import re
 import logging
 import pandas as pd
-from flask import Flask, render_template, request, send_from_directory, jsonify, send_file
+from flask import (
+    Flask,
+    render_template,
+    request,
+    send_from_directory,
+    jsonify,
+    send_file,
+)
 from flask_wtf.csrf import CSRFProtect, validate_csrf
 from wtforms import FileField
 from flask_wtf import FlaskForm
@@ -18,8 +25,17 @@ import zipfile
 from io import BytesIO
 from dotenv import load_dotenv
 from threading import Lock
+from flask_session import Session
+import shutil
+from flask import session
+
 
 app = Flask(__name__)
+
+# Ensure sessions are stored on server in case of spin-down
+app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_FILE_DIR"] = "/tmp/flask_sessions"
+Session(app)
 
 # Load environment variables and configure secret key for CSRF/session
 load_dotenv()
@@ -38,24 +54,28 @@ csrf = CSRFProtect(app)
 # Initialize SocketIO
 socketio = SocketIO(
     app,
-    cors_allowed_origins=["https://spotifydownautomater.onrender.com", "http://localhost:5000", "http://127.0.0.1:5000"]
+    cors_allowed_origins=[
+        "https://spotifydownautomater.onrender.com",
+        "http://localhost:5000",
+        "http://127.0.0.1:5000",
+    ],
 )
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler()],
 )
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
 
-songs = []
 failed_downloads = set()
 successful_downloads = set()  # Track successful downloads
 
 download_sets_lock = Lock()
+
 
 # Form for CSV upload with CSRF
 class UploadForm(FlaskForm):
@@ -63,21 +83,20 @@ class UploadForm(FlaskForm):
 
 
 def process_song(idx: int):
-    global failed_downloads, successful_downloads, songs
+    global failed_downloads, successful_downloads
 
     # Validate index
-    if idx < 0 or idx >= len(songs):
+    if idx < 0 or idx >= len(session["songs"]):
         logging.error(f"Invalid song index: {idx}")
         with download_sets_lock:
             failed_downloads.add(idx)
-        socketio.emit("download_progress", {
-            "index": idx,
-            "status": "failed",
-            "message": "Invalid song index"
-        })
+        socketio.emit(
+            "download_progress",
+            {"index": idx, "status": "failed", "message": "Invalid song index"},
+        )
         return
 
-    song = songs[idx]
+    song = session["songs"][idx]
     raw_title = song.get("Song") or song.get("Title")
     artist = song["Artist"]
     album = song.get("Album", "")
@@ -91,12 +110,15 @@ def process_song(idx: int):
 
     logging.info(f"Processing download for song {idx} to {filepath}")
 
-    socketio.emit("download_progress", {
-        "index": idx,
-        "status": "downloading",
-        "progress": 0,
-        "message": "Starting download"
-    })
+    socketio.emit(
+        "download_progress",
+        {
+            "index": idx,
+            "status": "downloading",
+            "progress": 0,
+            "message": "Starting download",
+        },
+    )
 
     try:
         if not check_existing_file(filepath, formatted_title, artist, album):
@@ -104,44 +126,48 @@ def process_song(idx: int):
             download_song_from_youtube(query, output_file, idx)
             tag_mp3_file(filepath, formatted_title, artist, album, genres)
         else:
-            logging.info(f"Skipping download for song {idx}: File exists with matching metadata")
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "success",
-                "message": "Downloaded (already exists)"
-            })
+            logging.info(
+                f"Skipping download for song {idx}: File exists with matching metadata"
+            )
+            socketio.emit(
+                "download_progress",
+                {
+                    "index": idx,
+                    "status": "success",
+                    "message": "Downloaded (already exists)",
+                },
+            )
 
         with download_sets_lock:
             failed_downloads.discard(idx)
             successful_downloads.add((idx, filepath))
 
-        socketio.emit("download_progress", {
-            "index": idx,
-            "status": "success",
-            "message": "Downloaded"
-        })
+        socketio.emit(
+            "download_progress",
+            {"index": idx, "status": "success", "message": "Downloaded"},
+        )
     except FileNotFoundError as e:
         logging.error(f"Download failed for song {idx}: {str(e)}")
         with download_sets_lock:
             failed_downloads.add(idx)
-        socketio.emit("download_progress", {
-            "index": idx,
-            "status": "failed",
-            "message": str(e)
-        })
+        socketio.emit(
+            "download_progress", {"index": idx, "status": "failed", "message": str(e)}
+        )
     except Exception as e:
         logging.error(f"Download failed for song {idx}: {str(e)}")
         with download_sets_lock:
             failed_downloads.add(idx)
-        socketio.emit("download_progress", {
-            "index": idx,
-            "status": "failed",
-            "message": str(e)
-        })
+        socketio.emit(
+            "download_progress", {"index": idx, "status": "failed", "message": str(e)}
+        )
 
 
 def require_csrf():
-    token = request.headers.get("X-CSRFToken") or request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    token = (
+        request.headers.get("X-CSRFToken")
+        or request.headers.get("X-CSRF-Token")
+        or request.form.get("csrf_token")
+    )
     try:
         validate_csrf(token)
         return True
@@ -149,7 +175,9 @@ def require_csrf():
         logging.warning(f"CSRF validation failed: {e}")
         return False
 
+
 # ---- Utility Functions ----
+
 
 def sanitize_metadata_field(value):
     """Sanitize metadata fields by handling None or NaN values and stripping whitespace."""
@@ -159,9 +187,11 @@ def sanitize_metadata_field(value):
         return ""
     return str(value).strip()
 
+
 def sanitize_filename(name):
     """Remove invalid characters from filenames."""
     return re.sub(r'[\\/*?:"<>|]', "", name)
+
 
 def format_title(raw_title):
     """Clean and format song titles by removing unwanted text and normalizing variations."""
@@ -171,13 +201,16 @@ def format_title(raw_title):
         title = re.sub(r"\s*(slowed|slowed remix)[^)]*$", "", title, flags=re.I)
         title = title.strip() + " (Slowed)"
     elif re.search(r"\b(sped up|speed up|speedup|speed-up)\b", title, flags=re.I):
-        title = re.sub(r"\s*(sped up|speed up|speedup|speed-up)[^)]*$", "", title, flags=re.I)
+        title = re.sub(
+            r"\s*(sped up|speed up|speedup|speed-up)[^)]*$", "", title, flags=re.I
+        )
         title = title.strip() + " (Sped Up)"
     title = re.sub(r"\s?[_-]+\s?", " ", title, flags=re.I)
     title = title.lower().title()
     title = re.sub(r"('S)\b", "'s", title)
     title = re.sub(r"('T)\b", "'t", title)
     return title
+
 
 def unique_path(base_path):
     """Generate a unique file path by appending a number if the file already exists."""
@@ -187,6 +220,7 @@ def unique_path(base_path):
         path = os.path.normpath(f"{base_path} ({counter})")
         counter += 1
     return path  # Return path without .mp3 extension
+
 
 def fetch_cover_art(song_title, artist_name):
     """Fetch cover art from iTunes based on song title and artist."""
@@ -205,13 +239,14 @@ def fetch_cover_art(song_title, artist_name):
         logging.error(f"[Cover Art] Failed to fetch: {e}")
     return None
 
+
 def tag_mp3_file(filepath, title, artist, album, genres):
     """Tag an MP3 file with metadata and cover art."""
     filepath = os.path.normpath(filepath)  # Normalize path
     if not os.path.exists(filepath):
         logging.error(f"Cannot tag file {filepath}: File does not exist")
         raise FileNotFoundError(f"File {filepath} does not exist for tagging")
-    
+
     title = sanitize_metadata_field(title)
     artist = sanitize_metadata_field(artist)
     album = sanitize_metadata_field(album)
@@ -251,6 +286,7 @@ def tag_mp3_file(filepath, title, artist, album, genres):
         except error as e:
             logging.error(f"[Cover Art] Failed to embed: {e}")
 
+
 def check_existing_file(filepath, title, artist, album):
     """Check if a file exists with matching metadata."""
     filepath = os.path.normpath(filepath)  # Normalize path
@@ -277,6 +313,7 @@ def check_existing_file(filepath, title, artist, album):
         logging.error(f"[Metadata Check] Failed: {e}")
         return False
 
+
 def download_song_from_youtube(query, output_file, idx):
     """Download a song from YouTube using yt-dlp with progress updates."""
     output_file = os.path.normpath(output_file)  # Normalize path
@@ -287,23 +324,30 @@ def download_song_from_youtube(query, output_file, idx):
         """Emit progress updates via SocketIO."""
         if d["status"] == "downloading":
             percent = d.get("downloaded_bytes", 0) / d.get("total_bytes", 1) * 100
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "downloading",
-                "progress": round(percent, 1),
-                "message": f"Downloading {percent:.1f}%"
-            })
+            socketio.emit(
+                "download_progress",
+                {
+                    "index": idx,
+                    "status": "downloading",
+                    "progress": round(percent, 1),
+                    "message": f"Downloading {percent:.1f}%",
+                },
+            )
         elif d["status"] == "finished":
-            socketio.emit("download_progress", {
-                "index": idx,
-                "status": "finished",
-                "message": "Processing metadata"
-            })
+            socketio.emit(
+                "download_progress",
+                {"index": idx, "status": "finished", "message": "Processing metadata"},
+            )
 
     class MyLogger:
-        def debug(self, msg): pass
-        def warning(self, msg): logging.warning(msg)
-        def error(self, msg): logging.error(msg)
+        def debug(self, msg):
+            pass
+
+        def warning(self, msg):
+            logging.warning(msg)
+
+        def error(self, msg):
+            logging.error(msg)
 
     ydl_opts = {
         "format": "bestaudio/best",
@@ -320,6 +364,8 @@ def download_song_from_youtube(query, output_file, idx):
         ],
         "quiet": False,
         "noplaylist": True,
+        "retries": 3,
+        "socket_timeout": 30,
     }
     try:
         with YoutubeDL(ydl_opts) as ydl:
@@ -335,12 +381,12 @@ def download_song_from_youtube(query, output_file, idx):
         logging.error(f"Unexpected error during download for {query}: {str(e)}")
         raise
 
+
 # ---- Routes ----
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    """Handle CSV upload and display song list."""
-    global songs
     form = UploadForm()
     if form.validate_on_submit():
         file = form.csv_file.data
@@ -352,13 +398,13 @@ def index():
                 required_columns = ["Song", "Artist"]
                 if not all(col in df.columns for col in required_columns):
                     return "CSV missing required columns", 400
-                songs = df.to_dict(orient="records")
-                logging.info(f"Loaded {len(songs)} songs from CSV")
-                return render_template("index.html", songs=songs, form=form)
+                session["songs"] = df.to_dict(orient="records")
+                return render_template("index.html", songs=session["songs"], form=form)
             except Exception as e:
                 logging.error(f"Failed to process CSV: {e}")
                 return "Invalid CSV file", 400
-    return render_template("index.html", songs=[], form=form)
+    return render_template("index.html", songs=session.get("songs", []), form=form)
+
 
 @app.route("/download", methods=["POST"])
 def download_songs():
@@ -377,6 +423,7 @@ def download_songs():
 
     return jsonify({"started": indices})
 
+
 @app.route("/retry-failed", methods=["POST"])
 def retry_failed_downloads():
     """Retry downloading songs that previously failed (background)."""
@@ -391,16 +438,21 @@ def retry_failed_downloads():
 
     return jsonify({"started": indices})
 
+
 @app.route("/downloads/<filename>")
 def download_file(filename):
     """Serve a downloaded MP3 file."""
-    return send_from_directory(app.config["DOWNLOAD_FOLDER"], filename, as_attachment=True)
+    return send_from_directory(
+        app.config["DOWNLOAD_FOLDER"], filename, as_attachment=True
+    )
+
 
 @app.route("/downloads/list")
 def partial_downloads_list():
     """Render a partial list of downloaded files."""
     files = os.listdir(app.config["DOWNLOAD_FOLDER"])
     return render_template("partials/download_list.html", files=files)
+
 
 @app.route("/download_zip", methods=["POST"])
 def download_zip():
@@ -421,8 +473,16 @@ def download_zip():
         memory_file,
         mimetype="application/zip",
         as_attachment=True,
-        download_name="downloaded_songs.zip"
+        download_name="downloaded_songs.zip",
     )
+
+
+@app.route("/cleanup", methods=["GET"])
+def cleanup_downloads():
+    shutil.rmtree(app.config["DOWNLOAD_FOLDER"], ignore_errors=True)
+    os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
+    return "Cleaned up downloads", 200
+
 
 if __name__ == "__main__":
     socketio.run(app, debug=True)
