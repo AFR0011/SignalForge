@@ -1,53 +1,154 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Song Downloader</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <meta name="job-id" content="{{ job.job_id }}">
+  <title>Signal Forge — CSV audio workspace</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-    <div class="container">
-        <h1>Upload CSV</h1>
-        <form method="POST" enctype="multipart/form-data">
-            {{ form.hidden_tag() }}  <!-- Adds <input name="csrf_token"> -->
-            {{ form.csv_file.label }} {{ form.csv_file }}
-            <button type="submit">Upload</button>
-        </form>
+<body data-job-id="{{ job.job_id }}" data-selection-limit="{{ selection_limit }}">
+  <a class="skip-link" href="#workspace">Skip to workspace</a>
 
-        {% if songs %}
-        <div class="controls">
-            <button id="select-all">Select All</button>
-            <button id="download-selected">Download Selected</button>
-            <button id="retry-failed">Retry Failed</button>
-            <button id="download-zip" style="display: none;">Download All as ZIP</button>
+  <header class="site-header">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="Signal Forge home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span>Signal Forge</span>
+    </a>
+    <span class="privacy-pill"><span aria-hidden="true">●</span> Private process-local job</span>
+  </header>
+
+  <main id="workspace" class="shell">
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">CSV → AUDIO WORKSPACE</p>
+        <h1 id="page-title">Turn a track list into an organized audio queue.</h1>
+        <p class="lede">Import a UTF-8 CSV, choose up to {{ selection_limit }} tracks, and follow every file from queue to download.</p>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span>
+      </div>
+    </section>
+
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    {% if error_message %}
+      <div class="message message-error" role="alert">{{ error_message }}</div>
+    {% endif %}
+
+    <section class="panel import-panel" aria-labelledby="import-title">
+      <div class="section-heading">
+        <div>
+          <p class="step-label">01 / IMPORT</p>
+          <h2 id="import-title">Bring your track list</h2>
         </div>
-        <table>
+        <button class="help-toggle" type="button" id="schema-toggle" aria-expanded="false" aria-controls="schema-help">CSV schema help</button>
+      </div>
+
+      <div id="schema-help" class="schema-help" hidden>
+        <p><strong>Required:</strong> <code>Song</code>, <code>Artist</code>. <strong>Optional:</strong> <code>Album</code>, <code>Genres</code>.</p>
+        <pre aria-label="CSV example">Song,Artist,Album,Genres
+Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
+        <p>UTF-8 only · up to {{ csv_max_rows }} rows · maximum {{ (csv_max_bytes / 1000000)|round(1) }} MB.</p>
+      </div>
+
+      <form id="upload-form" action="{{ url_for('upload_csv') }}" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="drop-zone" id="drop-zone" for="csv-file">
+          <input id="csv-file" name="csv_file" type="file" accept=".csv,text/csv" required>
+          <span class="drop-icon" aria-hidden="true">↥</span>
+          <span class="drop-copy"><strong>Drop your CSV here</strong><small>or choose a file from your device</small></span>
+          <span class="file-chip" id="file-chip" hidden></span>
+        </label>
+        <div class="form-footer">
+          <p>Uploads are parsed in memory. The CSV itself is not retained.</p>
+          <button class="button button-primary" id="upload-button" type="submit">Import track list <span aria-hidden="true">→</span></button>
+        </div>
+      </form>
+    </section>
+
+    {% if songs %}
+    <section class="workspace-grid" aria-label="Download workspace">
+      <aside class="panel summary-panel" aria-labelledby="summary-title">
+        <p class="step-label">02 / OVERVIEW</p>
+        <h2 id="summary-title">Job dashboard</h2>
+        <dl class="metrics">
+          <div><dt>Total tracks</dt><dd id="metric-total">{{ songs|length }}</dd></div>
+          <div><dt>Selected</dt><dd id="metric-selected">0</dd></div>
+          <div><dt>Ready</dt><dd id="metric-ready">{{ job.files|length }}</dd></div>
+          <div><dt>Needs retry</dt><dd id="metric-failed">{{ job.failed|length }}</dd></div>
+        </dl>
+        <div class="overall-progress">
+          <div><span>Overall progress</span><strong id="overall-label">0%</strong></div>
+          <progress id="overall-progress" value="0" max="100">0%</progress>
+        </div>
+        <p class="job-label">Job <code>{{ job.job_id[:8] }}</code></p>
+      </aside>
+
+      <section class="panel queue-panel" aria-labelledby="queue-title">
+        <div class="section-heading queue-heading">
+          <div>
+            <p class="step-label">03 / QUEUE</p>
+            <h2 id="queue-title">Choose what to process</h2>
+          </div>
+          <span class="selection-note">Maximum {{ selection_limit }} per request</span>
+        </div>
+
+        <div class="toolbar" aria-label="Queue controls">
+          <button class="button button-quiet" id="select-all" type="button">Select first {{ selection_limit }}</button>
+          <button class="button button-primary" id="download-selected" type="button">Start selected</button>
+          <button class="button button-quiet" id="retry-failed" type="button">Retry failed</button>
+          <button class="button button-quiet" id="download-zip" type="button" {% if not job.files %}hidden{% endif %}>Download ZIP</button>
+          <button class="button button-danger" id="clear-job" type="button">Clear job</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="track-table">
             <thead>
-                <tr>
-                    <th><input type="checkbox" id="master-checkbox"></th>
-                    <th>Song</th>
-                    <th>Artist</th>
-                    <th>Status</th>
-                </tr>
+              <tr>
+                <th class="check-cell"><input id="master-checkbox" type="checkbox" aria-label="Select first {{ selection_limit }} tracks"></th>
+                <th>Track</th>
+                <th>Artist</th>
+                <th>Album</th>
+                <th>Status</th>
+                <th><span class="visually-hidden">Download</span></th>
+              </tr>
             </thead>
             <tbody>
-                {% for i, song in songs|enumerate %}
-                <tr data-index="{{ i }}">
-                    <td><input type="checkbox" class="row-checkbox"></td>
-                    <td>{{ song.Song }}</td>
-                    <td>{{ song.Artist }}</td>
-                    <td class="status">
-                        <span class="status-text">Pending</span>
-                        <a class="btn btn-primary download-btn" style="display: none;">Download</a>
-                    </td>
-                </tr>
-                {% endfor %}
+            {% for song in songs %}
+              {% set index = loop.index0 %}
+              {% set state = job.statuses.get(index, {}) %}
+              <tr data-index="{{ index }}" data-state="{{ state.get('status', 'pending') }}">
+                <td class="check-cell" data-label="Select"><input class="row-checkbox" type="checkbox" value="{{ index }}" aria-label="Select {{ song.Song }} by {{ song.Artist }}"></td>
+                <td data-label="Track"><strong>{{ song.Song }}</strong><small class="mobile-meta">{{ song.Album or 'No album supplied' }}</small></td>
+                <td data-label="Artist">{{ song.Artist }}</td>
+                <td data-label="Album">{{ song.Album or '—' }}</td>
+                <td class="status-cell" data-label="Status">
+                  <span class="status-badge"><i aria-hidden="true"></i><span class="status-text">{{ state.get('message', 'Ready to queue') }}</span></span>
+                  <progress class="track-progress" value="{{ state.get('progress', 0) }}" max="100" {% if state.get('status') != 'downloading' %}hidden{% endif %}>{{ state.get('progress', 0) }}%</progress>
+                </td>
+                <td class="action-cell" data-label="File">
+                  <a class="download-link" {% if index|string in job.files %}href="{{ job.files[index|string] }}"{% else %}hidden{% endif %}>Download</a>
+                </td>
+              </tr>
+            {% endfor %}
             </tbody>
-        </table>
-        {% endif %}
-    </div>
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+          </table>
+        </div>
+      </section>
+    </section>
+    {% else %}
+    <section class="empty-state" aria-label="Empty workspace">
+      <span aria-hidden="true">⌁</span>
+      <h2>Your queue is quiet</h2>
+      <p>Import a CSV to open the dashboard and selection controls.</p>
+    </section>
+    {% endif %}
+  </main>
+
+  <footer><span>Signal Forge</span><span>One worker · isolated jobs · bounded operations</span></footer>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

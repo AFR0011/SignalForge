@@ -1,0 +1,127 @@
+{
+  "schema_version": "agentic-workflow/v2",
+  "root": "C:\\Users\\farro\\Desktop\\Projects\\SpotifyDownAutomater",
+  "files_scanned": 37,
+  "scan_truncated": false,
+  "last_reconciled": "2026-07-18",
+  "primary_type": "software",
+  "traits": [
+    "flask-web-app",
+    "flask-socketio-threading",
+    "simple-websocket",
+    "media-processing",
+    "external-network",
+    "single-worker-gunicorn",
+    "pytest"
+  ],
+  "confidence": "high",
+  "evidence": {
+    "application": [
+      "app.py",
+      "templates/index.html",
+      "static/app.js"
+    ],
+    "runtime_and_dependencies": [
+      ".python-version",
+      "requirements.txt",
+      "requirements-dev.txt",
+      "build.sh",
+      "Procfile"
+    ],
+    "verification": [
+      "tests/conftest.py",
+      "tests/test_app.py",
+      "QA_REPORT.md"
+    ]
+  },
+  "existing_governance": [
+    "AGENTS.md",
+    "BLUEPRINT.md",
+    "DEV_STATE.md",
+    "DEV_LOG.md",
+    "QA_REPORT.md",
+    "RISK_REGISTER.md",
+    "docs/",
+    "shared/"
+  ],
+  "top_level": [
+    ".gitattributes",
+    ".gitignore",
+    ".python-version",
+    "AGENTS.md",
+    "BLUEPRINT.md",
+    "DEV_LOG.md",
+    "DEV_STATE.md",
+    "LICENSE",
+    "Procfile",
+    "QA_REPORT.md",
+    "README.md",
+    "RISK_REGISTER.md",
+    "app.py",
+    "build.sh",
+    "docs/",
+    "requirements-dev.txt",
+    "requirements.txt",
+    "shared/",
+    "static/",
+    "templates/",
+    "tests/",
+    "todo.md"
+  ],
+  "entry_points": [
+    "app.py",
+    "static/app.js",
+    "templates/index.html",
+    "tests/test_app.py"
+  ],
+  "commands": [
+    {
+      "command": "python -m pip install --requirement requirements.txt",
+      "source": "build.sh"
+    },
+    {
+      "command": "python -m pip install --requirement requirements-dev.txt",
+      "source": "requirements-dev.txt"
+    },
+    {
+      "command": "gunicorn --worker-class gthread --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app",
+      "source": "Procfile"
+    },
+    {
+      "command": "python app.py",
+      "source": "app.py __main__ block"
+    },
+    {
+      "command": "python -m pytest -q",
+      "source": "README.md and tests/"
+    }
+  ],
+  "sensitive_paths": [
+    ".env",
+    "configured DATA_ROOT job directories",
+    "system temporary ZIP response files"
+  ],
+  "generated_output_roots": [
+    "configured DATA_ROOT",
+    "system temporary directory",
+    "__pycache__",
+    ".pytest_cache",
+    ".venv"
+  ],
+  "protected_input_roots": [
+    ".env",
+    "paths outside configured DATA_ROOT",
+    "deployment credentials and user runtime data"
+  ],
+  "selected_profile": "software",
+  "selected_traits": [
+    "web-application",
+    "external-media",
+    "single-process-state",
+    "automated-tests"
+  ],
+  "selection_source": "semantic reconciliation",
+  "project_name": "SpotifyDownAutomater",
+  "current_cycle_status": "COMPLETE_WITH_RISKS",
+  "latest_tester_verdict": "PASS_WITH_RISKS"
+}

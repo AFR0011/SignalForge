@@ -1,198 +1,242 @@
-// Initialize SocketIO
-const socket = io();
+(() => {
+  "use strict";
 
-socket.on("connect_error", () => {
-  setTimeout(() => socket.connect(), 1000);
-});
+  const body = document.body;
+  const jobId = body.dataset.jobId;
+  const selectionLimit = Number(body.dataset.selectionLimit || 20);
+  const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  const toastRegion = document.getElementById("toast-region");
+  const rows = [...document.querySelectorAll(".track-table tbody tr")];
+  const checkboxes = [...document.querySelectorAll(".row-checkbox")];
+  const master = document.getElementById("master-checkbox");
+  const selectAllButton = document.getElementById("select-all");
+  const startButton = document.getElementById("download-selected");
+  const retryButton = document.getElementById("retry-failed");
+  const zipButton = document.getElementById("download-zip");
+  const clearButton = document.getElementById("clear-job");
 
-// Select DOM elements
-const master = document.getElementById("master-checkbox");
-const rows = document.querySelectorAll(".row-checkbox");
-const selectAllBtn = document.getElementById("select-all");
-const downloadBtn = document.getElementById("download-selected");
-const retryBtn = document.getElementById("retry-failed");
-const downloadZipBtn = document.getElementById("download-zip");
-let hasSuccessfulDownloads = false;
+  const announce = (message, tone = "info") => {
+    if (!toastRegion) return;
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${tone}`;
+    toast.setAttribute("role", tone === "error" ? "alert" : "status");
+    toast.textContent = message;
+    toastRegion.replaceChildren(toast);
+    window.setTimeout(() => toast.remove(), 6000);
+  };
 
-// Get CSRF token from hidden input
-const getCsrfToken = () => {
-  const tokenElement = document.querySelector('input[name="csrf_token"]');
-  if (!tokenElement || !tokenElement.value) {
-    console.error(
-      "CSRF token not found. Ensure the form is rendered correctly."
-    );
-    alert("CSRF token missing. Please refresh the page and try again.");
-    return null;
-  }
-  return tokenElement.value;
-};
+  const csrfToken = () => csrfMeta?.content || "";
 
-// Select all functionality
-master?.addEventListener("change", () => {
-  rows.forEach((chk) => (chk.checked = master.checked));
-});
+  const parseResponse = async (response) => {
+    const contentType = response.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+      ? await response.json()
+      : { error: await response.text() };
+    if (!response.ok) {
+      const error = new Error(data.error || `Request failed (${response.status})`);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  };
 
-selectAllBtn?.addEventListener("click", () => {
-  const anyUnchecked = [...rows].some((chk) => !chk.checked);
-  rows.forEach((chk) => (chk.checked = anyUnchecked));
-  master.checked = anyUnchecked;
-});
+  const mutate = async (url, options = {}) => {
+    const response = await fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      ...options,
+      headers: {
+        Accept: "application/json",
+        "X-CSRFToken": csrfToken(),
+        ...(options.headers || {}),
+      },
+    });
+    return parseResponse(response);
+  };
 
-// Handle real-time progress updates
-socket.on("download_progress", (data) => {
-  const row = document.querySelector(`tr[data-index='${data.index}'] .status`);
-  if (!row) return;
-  const statusText = row.querySelector(".status-text");
-  const downloadBtn = row.querySelector(".download-btn");
-  if (!statusText || !downloadBtn) return;
-  statusText.textContent = data.message;
-  if (data.status === "downloading" && data.progress) {
-    statusText.innerHTML = `Downloading <progress value="${data.progress}" max="100"></progress> ${data.progress}%`;
-  } else if (data.status === "success") {
-    row.className = "status success";
-    downloadBtn.style.display = "inline-block";
-    // Set href based on sanitized song title
-    const song = rows[data.index]
-      .closest("tr")
-      .querySelector("td:nth-child(2)").textContent;
-    const sanitized = song.replace(/[\\/*?:"<>|]/g, "");
-    downloadBtn.href = `/downloads/${encodeURIComponent(sanitized)}.mp3`;
-    hasSuccessfulDownloads = true;
-    downloadZipBtn.style.display = hasSuccessfulDownloads
-      ? "inline-block"
-      : "none";
-  } else if (data.status === "failed") {
-    row.className = "status error";
-    downloadBtn.style.display = "none";
-  } else if (data.status === "finished") {
-    row.className = "status downloading";
-    downloadBtn.style.display = "none";
-  }
-});
+  const withBusyButton = async (button, busyLabel, task) => {
+    if (!button || button.disabled) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = busyLabel;
+    try {
+      await task();
+    } catch (error) {
+      announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  };
 
-// Download selected songs
-downloadBtn?.addEventListener("click", () => {
-  downloadBtn.disabled = true;
-  downloadBtn.textContent = "Processing...";
+  const selectedIndices = () => checkboxes.filter((box) => box.checked).map((box) => Number(box.value));
 
-  const selected = [...rows]
-    .map((chk, i) => (chk.checked ? i : -1))
-    .filter((i) => i >= 0);
-  if (selected.length > 20) {
-    alert("Please select up to 20 songs to avoid performance issues.");
-    return;
-  }
-  if (!selected.length) {
-    alert("Please select at least one song.");
-    return;
-  }
+  const updateSelection = () => {
+    const count = selectedIndices().length;
+    const metric = document.getElementById("metric-selected");
+    if (metric) metric.textContent = String(count);
+    if (master) {
+      master.checked = Boolean(checkboxes.length) && count === Math.min(checkboxes.length, selectionLimit);
+      master.indeterminate = count > 0 && !master.checked;
+    }
+  };
 
-  const csrfToken = getCsrfToken();
-  if (!csrfToken) return;
+  const updateSummary = () => {
+    const complete = rows.filter((row) => row.dataset.state === "success").length;
+    const failed = rows.filter((row) => row.dataset.state === "failed").length;
+    const settled = complete + failed;
+    const percent = rows.length ? Math.round((settled / rows.length) * 100) : 0;
+    const readyMetric = document.getElementById("metric-ready");
+    const failedMetric = document.getElementById("metric-failed");
+    const overall = document.getElementById("overall-progress");
+    const label = document.getElementById("overall-label");
+    if (readyMetric) readyMetric.textContent = String(complete);
+    if (failedMetric) failedMetric.textContent = String(failed);
+    if (overall) overall.value = percent;
+    if (label) label.textContent = `${percent}%`;
+    if (zipButton) zipButton.hidden = complete === 0;
+  };
 
-  // Set initial status to "Pending"
-  selected.forEach((i) => {
-    const row = document.querySelector(`tr[data-index='${i}'] .status`);
-    const statusText = row.querySelector(".status-text");
-    const downloadBtn = row.querySelector(".download-btn");
-    if (statusText && downloadBtn) {
-      statusText.textContent = "Pending";
-      row.className = "status pending";
-      downloadBtn.style.display = "none";
+  const setTrackState = (data) => {
+    if (data.job_id !== jobId) return;
+    const row = document.querySelector(`tr[data-index="${CSS.escape(String(data.index))}"]`);
+    if (!row) return;
+    row.dataset.state = data.status;
+    const status = row.querySelector(".status-text");
+    const progress = row.querySelector(".track-progress");
+    const link = row.querySelector(".download-link");
+    if (status) status.textContent = data.message || data.status;
+    if (progress) {
+      const hasProgress = data.status === "downloading" && Number.isFinite(Number(data.progress));
+      progress.hidden = !hasProgress;
+      if (hasProgress) progress.value = Number(data.progress);
+    }
+    if (link) {
+      if (data.status === "success" && data.download_url) {
+        link.href = data.download_url;
+        link.hidden = false;
+      } else if (data.status !== "success") {
+        link.hidden = true;
+        link.removeAttribute("href");
+      }
+    }
+    updateSummary();
+  };
+
+  checkboxes.forEach((box) => box.addEventListener("change", updateSelection));
+  master?.addEventListener("change", () => {
+    checkboxes.forEach((box, index) => {
+      box.checked = master.checked && index < selectionLimit;
+    });
+    updateSelection();
+  });
+  selectAllButton?.addEventListener("click", () => {
+    const target = !checkboxes.slice(0, selectionLimit).every((box) => box.checked);
+    checkboxes.forEach((box, index) => {
+      box.checked = target && index < selectionLimit;
+    });
+    updateSelection();
+  });
+
+  startButton?.addEventListener("click", () => withBusyButton(startButton, "Starting…", async () => {
+    const selected = selectedIndices();
+    if (!selected.length) throw new Error("Select at least one track.");
+    if (selected.length > selectionLimit) throw new Error(`Select no more than ${selectionLimit} tracks.`);
+    selected.forEach((index) => setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" }));
+    const result = await mutate("/download", {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selected }),
+    });
+    announce(`${result.started.length} track${result.started.length === 1 ? "" : "s"} queued.`, "success");
+  }));
+
+  retryButton?.addEventListener("click", () => withBusyButton(retryButton, "Retrying…", async () => {
+    const result = await mutate("/retry-failed", { headers: { "Content-Type": "application/json" }, body: "{}" });
+    announce(`${result.started.length} failed track${result.started.length === 1 ? "" : "s"} queued.`, "success");
+  }));
+
+  zipButton?.addEventListener("click", () => withBusyButton(zipButton, "Building ZIP…", async () => {
+    const response = await fetch("/download_zip", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { Accept: "application/zip, application/json", "X-CSRFToken": csrfToken() },
+    });
+    if (!response.ok) {
+      await parseResponse(response);
+      return;
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `audio-job-${jobId.slice(0, 8)}.zip`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    announce("ZIP download started.", "success");
+  }));
+
+  clearButton?.addEventListener("click", () => withBusyButton(clearButton, "Clearing…", async () => {
+    if (!window.confirm("Clear this inactive job and remove its completed files?")) return;
+    await mutate("/cleanup", { headers: { "Content-Type": "application/json" }, body: "{}" });
+    window.location.assign("/");
+  }));
+
+  const schemaToggle = document.getElementById("schema-toggle");
+  const schemaHelp = document.getElementById("schema-help");
+  schemaToggle?.addEventListener("click", () => {
+    const expanded = schemaToggle.getAttribute("aria-expanded") === "true";
+    schemaToggle.setAttribute("aria-expanded", String(!expanded));
+    if (schemaHelp) schemaHelp.hidden = expanded;
+  });
+
+  const fileInput = document.getElementById("csv-file");
+  const dropZone = document.getElementById("drop-zone");
+  const fileChip = document.getElementById("file-chip");
+  const showFile = () => {
+    const file = fileInput?.files?.[0];
+    if (!file || !fileChip) return;
+    fileChip.textContent = `${file.name} · ${(file.size / 1000).toFixed(1)} KB`;
+    fileChip.hidden = false;
+  };
+  fileInput?.addEventListener("change", showFile);
+  ["dragenter", "dragover"].forEach((eventName) => dropZone?.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropZone.classList.add("is-dragging");
+  }));
+  ["dragleave", "drop"].forEach((eventName) => dropZone?.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("is-dragging");
+  }));
+  dropZone?.addEventListener("drop", (event) => {
+    if (!fileInput || !event.dataTransfer?.files.length) return;
+    const transfer = new DataTransfer();
+    transfer.items.add(event.dataTransfer.files[0]);
+    fileInput.files = transfer.files;
+    showFile();
+  });
+  document.getElementById("upload-form")?.addEventListener("submit", (event) => {
+    if (!fileInput?.files?.length) {
+      event.preventDefault();
+      announce("Choose a CSV file before importing.", "error");
+      return;
+    }
+    const button = document.getElementById("upload-button");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Importing…";
     }
   });
 
-  // Submit form via fetch
-  fetch("/download", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-CSRFToken": csrfToken,
-    },
-    body: selected.map((i) => `selected=${i}`).join("&"),
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
-      return res.json();
-    })
-    .then((data) => {
-      // SocketIO handles real-time updates
-    })
-    .catch((err) => {
-      console.error("Download error:", err);
-      selected.forEach((i) => {
-        const row = document.querySelector(`tr[data-index='${i}'] .status`);
-        const statusText = row.querySelector(".status-text");
-        if (statusText) {
-          statusText.textContent = "Failed";
-          row.className = "status error";
-        }
-      });
-      alert("Download failed. Please try again.");
-    })
-    .finally(() => {
-      downloadBtn.disabled = false;
-      downloadBtn.textContent = "Download Selected";
-    });
-});
+  if (window.io && jobId) {
+    const socket = window.io({ transports: ["websocket", "polling"] });
+    socket.on("connect", () => socket.emit("join_job", { job_id: jobId }));
+    socket.on("download_progress", setTrackState);
+    socket.on("join_error", (data) => announce(data?.error || "Could not join the job channel.", "error"));
+    socket.on("connect_error", () => announce("Live progress disconnected; reconnecting…", "error"));
+  }
 
-// Retry failed downloads
-retryBtn?.addEventListener("click", () => {
-  const csrfToken = getCsrfToken();
-  if (!csrfToken) return;
-
-  fetch("/retry-failed", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      "X-CSRFToken": csrfToken,
-    },
-  })
-    .then((response) => {
-      if (!response.ok)
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      return response.json();
-    })
-    .then((results) => {
-      // SocketIO handles real-time updates
-    })
-    .catch((err) => {
-      console.error("Retry failed error:", err);
-      alert("Failed to retry downloads. Please try again.");
-    });
-});
-
-// Download all as ZIP
-downloadZipBtn?.addEventListener("click", () => {
-  const csrfToken = getCsrfToken();
-  if (!csrfToken) return;
-
-  fetch("/download_zip", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "X-CSRFToken": csrfToken,
-    },
-  })
-    .then((response) => {
-      if (!response.ok)
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      return response.blob();
-    })
-    .then((blob) => {
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "downloaded_songs.zip";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    })
-    .catch((err) => {
-      console.error("Download ZIP error:", err);
-      alert("Failed to download ZIP file. Please try again.");
-    });
-});
+  updateSelection();
+  updateSummary();
+})();

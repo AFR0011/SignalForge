@@ -1,7 +1,9 @@
 {% if files %}
-{% for file in files %}
-<p><a href="/downloads/{{ file }}" class="btn btn-primary">{{ file }}</a></p>
-{% endfor %}
+<ul class="artifact-list">
+  {% for file in files %}
+  <li><a href="{{ file.url }}">{{ file.name }}</a></li>
+  {% endfor %}
+</ul>
 {% else %}
-<p>No files downloaded yet.</p>
+<p>No completed files are available.</p>
 {% endif %}

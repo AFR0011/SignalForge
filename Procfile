@@ -1,1 +1,1 @@
-web: gunicorn -k eventlet -w 1 app:app
+web: gunicorn --worker-class gthread --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app
