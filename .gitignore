@@ -1,4 +1,13 @@
-uploads/*
-downloads/*
 .env
-/bin
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+venv/
+bin/
+uploads/
+downloads/
+.tmp/
+*.zip
