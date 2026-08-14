@@ -504,6 +504,87 @@ def test_collect_picker_sources_keeps_label_hits_and_drops_tried_or_junk():
     assert application.youtube_video_id("labellabel1") == "labellabel1"
 
 
+def test_download_watch_url_skips_search_and_uses_that_url(tmp_path, monkeypatch):
+    output_base = tmp_path / "track"
+    calls: list[str] = []
+
+    class FakeYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download=True):
+            raise AssertionError("forced watch URL must not search")
+
+        def download(self, queries):
+            calls.append(queries[0])
+            output_base.with_suffix(".mp3").write_bytes(b"audio")
+
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    picker: list[dict] = [{"id": "shouldstay11"}]
+    application.download_song_from_youtube(
+        "Starling Halo",
+        output_base,
+        "ffmpeg",
+        lambda *_args: None,
+        100,
+        artist="Starling",
+        title="Halo",
+        watch_url="https://www.youtube.com/watch?v=labellabel1",
+        picker_out=picker,
+    )
+    assert calls == ["https://www.youtube.com/watch?v=labellabel1"]
+    assert picker == [{"id": "shouldstay11"}]
+    assert output_base.with_suffix(".mp3").is_file()
+
+
+def test_auto_download_failure_fills_picker_excluding_tried_ids(tmp_path, monkeypatch):
+    output_base = tmp_path / "track"
+
+    class FakeYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download=True):
+            return {
+                "entries": [
+                    {"id": "officialaaa", "title": "Halo Official Audio", "uploader": "Starling - Topic", "duration": 200, "view_count": 9},
+                    {"id": "labellabel1", "title": "Starling - Halo (Official Audio)", "uploader": "Label Records", "duration": 201, "view_count": 500_000},
+                ]
+            }
+
+        def download(self, queries):
+            raise application.DownloadError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    picker: list[dict] = [{"id": "stale"}]
+    with pytest.raises(application.DownloadError, match="403"):
+        application.download_song_from_youtube(
+            "Starling Halo",
+            output_base,
+            "ffmpeg",
+            lambda *_args: None,
+            100,
+            artist="Starling",
+            title="Halo",
+            picker_out=picker,
+        )
+    assert [item["id"] for item in picker] == ["labellabel1"]
+
+
 def test_youtube_download_retries_next_result_after_403(tmp_path, monkeypatch):
     output_base = tmp_path / "track"
     attempts: list[str] = []

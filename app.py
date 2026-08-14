@@ -1246,6 +1246,8 @@ def download_song_from_youtube(
     *,
     artist: str = "",
     title: str = "",
+    watch_url: str = "",
+    picker_out: list[dict[str, Any]] | None = None,
 ) -> None:
     def progress_hook(data: dict[str, Any]) -> None:
         for key in ("total_bytes", "total_bytes_estimate", "downloaded_bytes"):
@@ -1266,7 +1268,6 @@ def download_song_from_youtube(
     artist_name = artist.strip() or query.strip()
     song_title = title.strip() or query.strip()
     runtime_name, runtime_path = resolve_js_runtime()
-    search_url = f"ytsearch{YOUTUBE_SEARCH_RESULTS}:{build_youtube_search_query(artist_name, song_title)}"
     shared = {
         "quiet": True,
         "retries": 3,
@@ -1274,13 +1275,6 @@ def download_song_from_youtube(
         "js_runtimes": {runtime_name: {"path": runtime_path}},
         "extractor_args": {"youtube": {"player_client": ["default", "ios", "-android_sdkless"]}},
     }
-    with YoutubeDL({**shared, "extract_flat": True, "skip_download": True}) as explorer:
-        listing = explorer.extract_info(search_url, download=False) or {}
-    entries = [entry for entry in listing.get("entries") or [] if isinstance(entry, dict)]
-    candidates = rank_youtube_sources(entries, artist_name, song_title)
-    if not candidates:
-        raise DownloadError("No matching audio source found")
-
     download_options = {
         **shared,
         "format": "bestaudio/best",
@@ -1292,29 +1286,71 @@ def download_song_from_youtube(
         "match_filter": undesired_youtube_source,
         "writethumbnail": True,
     }
-    last_error: Exception | None = None
-    seen: set[str] = set()
-    for entry in candidates:
-        watch_url = youtube_watch_url(entry)
-        if not watch_url or watch_url in seen:
-            continue
-        seen.add(watch_url)
-        try:
-            with YoutubeDL(download_options) as downloader:
-                downloader.download([watch_url])
-        except DownloadError as exc:
-            last_error = exc
-            message = str(exc)
-            if "403" not in message and "Skipping" not in message and "No matching audio" not in message:
-                raise
-        if output_base.with_suffix(".mp3").is_file():
-            _prepare_sidecar_jpeg(output_base, ffmpeg_path)
-            return
+
+    def remove_leftovers() -> None:
         for leftover in output_base.parent.glob(f"{output_base.name}.*"):
             try:
                 leftover.unlink(missing_ok=True)
             except OSError:
                 LOGGER.warning("Could not remove rejected source output %s", leftover.name)
+
+    if watch_url:
+        try:
+            with YoutubeDL(download_options) as downloader:
+                downloader.download([watch_url])
+        except DownloadError:
+            remove_leftovers()
+            raise
+        if output_base.with_suffix(".mp3").is_file():
+            _prepare_sidecar_jpeg(output_base, ffmpeg_path)
+            return
+        remove_leftovers()
+        raise FileNotFoundError("Download did not produce an MP3 file")
+
+    search_url = f"ytsearch{YOUTUBE_SEARCH_RESULTS}:{build_youtube_search_query(artist_name, song_title)}"
+    with YoutubeDL({**shared, "extract_flat": True, "skip_download": True}) as explorer:
+        listing = explorer.extract_info(search_url, download=False) or {}
+    entries = [entry for entry in listing.get("entries") or [] if isinstance(entry, dict)]
+    candidates = rank_youtube_sources(entries, artist_name, song_title)
+    tried_ids: set[str] = set()
+
+    def fill_picker() -> None:
+        if picker_out is not None:
+            picker_out.clear()
+            picker_out.extend(collect_picker_sources(entries, tried_ids))
+
+    if not candidates:
+        fill_picker()
+        raise DownloadError("No matching audio source found")
+
+    last_error: Exception | None = None
+    seen: set[str] = set()
+    for entry in candidates:
+        candidate_url = youtube_watch_url(entry)
+        if not candidate_url or candidate_url in seen:
+            continue
+        seen.add(candidate_url)
+        video_id = youtube_video_id(str(entry.get("id") or ""))
+        if video_id is not None:
+            tried_ids.add(video_id)
+        try:
+            with YoutubeDL(download_options) as downloader:
+                downloader.download([candidate_url])
+        except DownloadError as exc:
+            last_error = exc
+            message = str(exc)
+            if "403" not in message and "Skipping" not in message and "No matching audio" not in message:
+                fill_picker()
+                raise
+            if picker_out is not None:
+                remove_leftovers()
+                fill_picker()
+                raise
+        if output_base.with_suffix(".mp3").is_file():
+            _prepare_sidecar_jpeg(output_base, ffmpeg_path)
+            return
+        remove_leftovers()
+    fill_picker()
     if last_error is not None:
         raise last_error
     raise FileNotFoundError("Download did not produce an MP3 file")
