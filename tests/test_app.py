@@ -546,6 +546,7 @@ def test_download_watch_url_skips_search_and_uses_that_url(tmp_path, monkeypatch
 
 def test_auto_download_failure_fills_picker_excluding_tried_ids(tmp_path, monkeypatch):
     output_base = tmp_path / "track"
+    attempts: list[str] = []
 
     class FakeYDL:
         def __init__(self, options):
@@ -561,11 +562,13 @@ def test_auto_download_failure_fills_picker_excluding_tried_ids(tmp_path, monkey
             return {
                 "entries": [
                     {"id": "officialaaa", "title": "Halo Official Audio", "uploader": "Starling - Topic", "duration": 200, "view_count": 9},
-                    {"id": "labellabel1", "title": "Starling - Halo (Official Audio)", "uploader": "Label Records", "duration": 201, "view_count": 500_000},
+                    {"id": "vevovevovev", "title": "Halo Official Audio", "uploader": "StarlingVEVO", "duration": 200, "view_count": 8},
+                    {"id": "labellabel1", "title": "Starling - Halo (Official Audio)", "uploader": "Label Records", "duration": 201, "view_count": 99_999},
                 ]
             }
 
         def download(self, queries):
+            attempts.append(queries[0])
             raise application.DownloadError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
 
     monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
@@ -582,6 +585,8 @@ def test_auto_download_failure_fills_picker_excluding_tried_ids(tmp_path, monkey
             title="Halo",
             picker_out=picker,
         )
+    assert any("officialaaa" in item for item in attempts)
+    assert any("vevovevovev" in item for item in attempts)
     assert [item["id"] for item in picker] == ["labellabel1"]
 
 

@@ -1342,10 +1342,6 @@ def download_song_from_youtube(
             if "403" not in message and "Skipping" not in message and "No matching audio" not in message:
                 fill_picker()
                 raise
-            if picker_out is not None:
-                remove_leftovers()
-                fill_picker()
-                raise
         if output_base.with_suffix(".mp3").is_file():
             _prepare_sidecar_jpeg(output_base, ffmpeg_path)
             return
