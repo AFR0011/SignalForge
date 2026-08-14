@@ -182,11 +182,14 @@
     return `${minutes}:${remain}`;
   };
 
-  const closeSourceDialog = () => {
+  const finalizeSourceDialogClose = () => {
     invalidateSourceDialogFetch();
-    sourceDialog?.close();
     sourceOpener?.focus();
     sourceOpener = null;
+  };
+
+  const closeSourceDialog = () => {
+    sourceDialog?.close();
   };
 
   const sourceCardButtons = () => [...(sourceCards?.querySelectorAll("button") || [])];
@@ -273,6 +276,7 @@
       openSourceDialog(button).catch((error) => announce(error.message, "error"));
     });
   });
+  sourceDialog?.addEventListener("close", finalizeSourceDialogClose);
   sourceDialog?.addEventListener("click", (event) => {
     if (event.target === sourceDialog) closeSourceDialog();
   });
