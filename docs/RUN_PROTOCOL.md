@@ -15,6 +15,7 @@ Use the lightest check that can disprove a completion claim, then broaden accord
 - Production packages: `python -m pip install --requirement requirements.txt`.
 - Development/test packages: `python -m pip install --requirement requirements-dev.txt`; this includes production requirements and pytest.
 - FFmpeg: validated executable `FFMPEG_PATH` override or the executable supplied by pinned `imageio-ffmpeg`; the repository build no longer downloads an archive.
+- YouTube downloads: host Deno 2.3+ on `PATH` (or Node via `YTDLP_JS_RUNTIME=node` / `YTDLP_JS_RUNTIME_PATH`). Restart the shell after installing so PATH updates. `build.sh` does not install a JS runtime.
 - Production requires a strong `SECRET_KEY` of at least 32 characters and rejects missing, weak, or placeholder values.
 - Runtime files live under configurable `DATA_ROOT`; use disposable storage for tests and never point tests at user/runtime data.
 
@@ -39,11 +40,11 @@ Use the lightest check that can disprove a completion claim, then broaden accord
 
 ## Current evidence baseline
 
-- Corrective manual-close race selection: 5 passed.
-- Source/global/TTL selection: 19 passed.
-- Full pytest suite: 58 passed twice (1.06s and 0.82s in the final independent run).
-- Python/JavaScript syntax, `pip check`, point-in-time `pip-audit`, and `git diff --check`: pass.
-- Frozen product hashes: unchanged across independent testing; no live processes or temporary residue remained.
+- `SELECT-ALL-QUEUE-004` focused queue selection: 13 passed, 49 deselected.
+- Full pytest suite: 62 passed twice (1.49s and 1.36s in the independent TEST run).
+- Python/JavaScript syntax, `pip check`, and `git diff --check`: pass.
+- `pip-audit`: unavailable in the TEST environment.
+- Frozen product hashes: unchanged across independent testing.
 
 ## Safety boundaries
 

@@ -152,3 +152,49 @@ Independent tester handoff:
 - Preserved bootstrap findings as historical entries in audit/version/history files.
 - JSON parsing and documentation encoding/contradiction scans passed for the authorized surfaces. The out-of-scope `AGENTS.md` bootstrap command block still requires root reconciliation.
 - Product/source/test/dependency/UI hashes remained identical to the pre-docs-QA baseline; `shared/locks.json` was not edited.
+
+## 2026-08-14 - SELECT-ALL-QUEUE-004 executor evidence
+
+- Raised default `SELECTION_LIMIT` from 20 to 2,000 so an imported CSV can be selected in one request.
+- Select-all / master checkbox now select every imported track up to the configured limit. Copy no longer says “first 20”.
+- `/download` uses `enqueue_indices`: a greedy reserved prefix starts immediately; the remainder is job-local pending without byte reservations. `/retry-failed` queues every failed track rather than slicing to 20.
+- `process_song` drains pending after releasing a reservation. Tracks that cannot fit remaining retained bytes fail closed with a disk-budget error. Cleanup, replacement, and TTL treat pending as outstanding work.
+- Direct `reserve_indices` callers keep all-or-nothing admission.
+
+Executor commands and results:
+
+- Focused pytest selection (`selection or pending or task_ceiling or full_imported or never_fitting or fake_clock_ttl or valid_upload or cumulative_budget or start_and_worker`): 16 passed, 46 deselected in 0.74s.
+- `python -m pytest -q`: 62 passed in 1.64s.
+- `python -m py_compile app.py`: completed successfully.
+- `node --check static/app.js`: completed successfully.
+- `python -m pip check`: No broken requirements found.
+- `git diff --check`: completed with no whitespace errors.
+- `python -m pip_audit -r requirements.txt`: unavailable in this environment (`No module named pip_audit`).
+
+Frozen product hashes before independent TEST:
+
+- `app.py` sha256 `974dd33e5fd7f5e5d0f267dea8f26eeab0456e0dc37a156f6b4e8bcc526bb547`
+- `static/app.js` sha256 `e72e746403512a603a87fb3e9d06097129e5d0d6e26a67accb1cc1131d6feabd`
+- `templates/index.html` sha256 `dd5c93d3c9d3f5e94d0fe4d6c13d5aa1e3a78b80bf4dda4dba4ff94760431aeb`
+- `tests/test_app.py` sha256 `98ce2463c94fd8cf2790c0d55da229adb0fba2e8b59ea41bacdef52e9de51a34`
+- `README.md` sha256 `42972ee46c94e732ea77047a7e6f0459c8e9b402480fa53692a54684daceb01d`
+
+Limitations for independent testing:
+
+- No live network/media download was attempted.
+- A populated-browser visual smoke check was not run; template rendering and UI-contract assertions are automated.
+- `pip-audit` was not installed in the executor environment.
+
+## 2026-08-14 - SELECT-ALL-QUEUE-004 independent verification
+
+- Frozen product hashes were unchanged after TEST.
+- Focused queue selection: 13 passed, 49 deselected in 0.49s.
+- Full `python -m pytest -q`: 62 passed in 1.49s; repeated: 62 passed in 1.36s.
+- `python -m py_compile app.py`, `node --check static/app.js`, `python -m pip check`, and `git diff --check` passed.
+- `python -m pip_audit -r requirements.txt` remained unavailable.
+
+## 2026-08-14 - SELECT-ALL-QUEUE-004 documentation QA closure
+
+- Reconciled QA, risk, project state, version history, architecture, run protocol, test strategy, and shared records with the independent `PASS_WITH_RISKS` verdict.
+- Released cooperative locks. Historical FAIL/PASS_WITH_RISKS verdicts were not rewritten.
+- Marked the batch `COMPLETE_WITH_RISKS`; no new batch was started.

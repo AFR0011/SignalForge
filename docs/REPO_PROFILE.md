@@ -26,7 +26,7 @@ Initialized: 2026-07-17
 - Active-state authority: `DEV_STATE.md`.
 - Accepted batch/criteria authority: `BLUEPRINT.md`.
 - Verification and uncertainty: `QA_REPORT.md` and `RISK_REGISTER.md`.
-- Current cycle: `CAPACITY-SUPPLYCHAIN-003` closed `COMPLETE_WITH_RISKS`; final tester verdict `PASS_WITH_RISKS`.
+- Current cycle: `SELECT-ALL-QUEUE-004` closed `COMPLETE_WITH_RISKS`; final tester verdict `PASS_WITH_RISKS`.
 
 ## Entry points and commands
 
@@ -56,6 +56,6 @@ Initialized: 2026-07-17
 
 - [x] Primary type and traits confirmed by semantic repository mapping.
 - [x] Authority, protected paths, generated outputs, and commands reconciled to final implementation.
-- [x] Pytest verification path exists; final independent full suite passed 58 tests twice.
+- [x] Pytest verification path exists; `SELECT-ALL-QUEUE-004` independent full suite passed 62 tests twice.
 - [ ] Deployment owner confirmed secret rotation/session invalidation/history containment and target production behavior.
 - [ ] Live media/FFmpeg and populated-browser checks completed.

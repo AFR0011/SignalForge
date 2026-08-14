@@ -44,3 +44,15 @@ These are conservative candidates discovered by name. `docs/REPO_MAP.md` remains
 - Verification: `python -m pytest -q`, `python -m py_compile app.py`, `node --check static/app.js`, `python -m pip check`, and `python -m pip_audit -r requirements.txt` when the audit tool is installed.
 
 `docs/RUN_PROTOCOL.md` records the verified command sequence. Unknown commands must remain unknown rather than invented.
+
+## Learned User Preferences
+
+- Allow selecting and queueing every parsed song; do not cap UI selection at 20.
+- Prefer official studio audio of the requested title and artist; avoid music videos, clean/non-explicit versions, parodies, remixes or 8D edits, movie clips, short previews, and similarly named wrong tracks.
+- Embed album artwork in downloaded MP3 metadata.
+
+## Learned Workspace Facts
+
+- YouTube downloads need yt-dlp JavaScript challenge solving; Deno is the default runtime (Node via `YTDLP_JS_RUNTIME`). A winget-installed Deno is often missing from the current process PATH, so runtime lookup must search beyond PATH.
+- The live-progress client must load vendored Socket.IO from `/static/socket.io.min.js`; requesting `/socket.io/socket.io.js` is treated as an Engine.IO handshake.
+- Local Windows development has used Python 3.12 even though `.python-version` declares 3.14.6.

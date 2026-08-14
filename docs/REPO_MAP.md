@@ -28,7 +28,7 @@ Profile `software`: a Flask/Flask-SocketIO CSV-to-MP3 web application with a res
 
 - Product source: `app.py`, `templates/`, and `static/`.
 - Runtime/dependency/deployment: `.python-version`, `requirements.txt`, `requirements-dev.txt`, `build.sh`, and `Procfile`.
-- Runtime configuration: `SECRET_KEY`, `DATA_ROOT`, `FFMPEG_PATH`, `PORT`, and production-environment detection through `RENDER`/`RENDER_EXTERNAL_URL`; bounded settings may be supplied through Flask configuration for embedding/tests.
+- Runtime configuration: `SECRET_KEY`, `DATA_ROOT`, `FFMPEG_PATH`, `YTDLP_JS_RUNTIME`, `YTDLP_JS_RUNTIME_PATH`, `PORT`, and production-environment detection through `RENDER`/`RENDER_EXTERNAL_URL`; bounded settings may be supplied through Flask configuration for embedding/tests.
 - External untrusted input: uploaded CSV requiring `Song` and `Artist`, optionally consuming `Album` and `Genres`; yt-dlp/YouTube and iTunes artwork responses.
 - Acceptance and evidence: `BLUEPRINT.md`, `QA_REPORT.md`, and `RISK_REGISTER.md` under the authority order in `AGENTS.md`.
 
@@ -46,7 +46,7 @@ Profile `software`: a Flask/Flask-SocketIO CSV-to-MP3 web application with a res
 - Development/test install: `python -m pip install --requirement requirements-dev.txt`.
 - Production: `gunicorn --worker-class gthread --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`.
 - Local development: `python app.py` (loopback, debug disabled).
-- Automated suite: `python -m pytest -q` (58 tests in the final verified state).
+- Automated suite: `python -m pytest -q` (62 tests in the `SELECT-ALL-QUEUE-004` verified state).
 - Supporting checks: `python -m py_compile app.py`, `node --check static/app.js`, `python -m pip check`, `python -m pip_audit -r requirements.txt`, and `git diff --check`.
 
 ## Protected and sensitive paths

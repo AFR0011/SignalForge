@@ -7,7 +7,7 @@ Initialized: 2026-07-17
 
 ## Current summary
 
-The original thirteen risks remain traceable below. Status changes are based on implementation plus independent automated evidence; they do not erase the original findings. The current batch closes `COMPLETE_WITH_RISKS`.
+The original thirteen risks remain traceable below. Status changes are based on implementation plus independent automated evidence; they do not erase the original findings. `SELECT-ALL-QUEUE-004` closes `COMPLETE_WITH_RISKS`.
 
 - One High external security risk remains open: secret rotation/session invalidation/history containment.
 - One Medium product/legal risk remains open: automatic source matching, rights, and provenance.
@@ -54,7 +54,7 @@ The original thirteen risks remain traceable below. Status changes are based on 
 
 - Original severity: High; Category: availability; Status: Mitigated with residual Medium architecture/operations risk.
 - Evidence: Server-side request/CSV/row/field/selection/rate/task/artifact/job/ZIP/source/global-byte/job-count limits are enforced. Atomic admission, conservative reservations, source abort cleanup, TTL reaping, manual-close accounting, and failure reconciliation are covered by the focused 5-test and 19-test selections plus two full 58-test runs.
-- Residual: Capacity, rate, and TTL state is process-local and requires exactly one production worker. No live load, long-duration, multi-process, or deployed capacity test was run.
+- Residual: Capacity, rate, TTL, and pending-queue state is process-local and requires exactly one production worker. Pending tracks do not reserve bytes until admitted; never-fit retained-byte cases fail closed. Cross-job process-budget stalls may not drain until this job completes other work or receives another queue request. No live load, long-duration, multi-process, or deployed capacity test was run.
 - Required action: Keep the one-worker deployment constraint or replace process-local authority with shared durable coordination before scaling horizontally; run controlled deployment/load verification.
 
 ### RISK-008 - Non-reproducible, unverified supply chain
@@ -92,6 +92,6 @@ The original thirteen risks remain traceable below. Status changes are based on 
 ### RISK-013 - No automated verification
 
 - Original severity: Medium; Category: verification; Status: Mitigated with residual Medium release-process risk.
-- Evidence: A deterministic 58-test pytest suite now covers configuration, routes, isolation, CSRF, storage, concurrency, capacity, TTL, cleanup, and mocked media/network boundaries. The final tester ran focused selections and the full suite twice, plus syntax, dependency, audit, and diff checks, with unchanged frozen source hashes and no process/temp residue.
+- Evidence: A deterministic 62-test pytest suite now covers configuration, routes, isolation, CSRF, storage, concurrency, capacity, TTL, cleanup, pending queue drain, and mocked media/network boundaries. The `SELECT-ALL-QUEUE-004` tester ran a focused 13-test selection and the full suite twice, plus syntax, dependency, and diff checks, with unchanged frozen source hashes. `pip-audit` was unavailable in that environment.
 - Residual: No CI job, populated-browser end-to-end/visual check, live media/FFmpeg integration, deployed smoke test, or supported-runtime matrix was independently verified.
 - Required action: Add CI across the supported runtime, run a human populated-browser accessibility/visual smoke test, and perform controlled live/deployment checks with legally permitted media.

@@ -19,7 +19,7 @@ Initialized: 2026-07-17
 - Background work uses copied immutable state and emits only to the owned opaque-job room.
 - Cross-session status/files/ZIP/cleanup/rooms are denied; paths remain directly below `DATA_ROOT` and files must be allowlisted.
 - Cleanup and CSV replacement keep the closing job's slot/bytes through deletion, atomically replace/finalize on success, and restore exact coherent accounting on failure.
-- Task, artifact, per-job, source, process-global byte, job-count, ZIP/artwork, request, rate, concurrency, and TTL limits are enforced without counter drift or pre-admission side effects.
+- Task, artifact, per-job, source, process-global byte, job-count, ZIP/artwork, request, rate, concurrency, pending-queue, and TTL limits are enforced without counter drift or pre-admission side effects.
 - Expiry claims only accepting idle jobs; active/reserved/closing/outside-root jobs are not deleted; filesystem deletion runs outside locks.
 - Production rejects missing/weak/placeholder secrets and the committed command retains the one-worker process-local invariant.
 
@@ -42,10 +42,9 @@ Initialized: 2026-07-17
 
 ## Verified baseline
 
-- Final corrective selection: 5 passed.
-- Final source/global/TTL selection: 19 passed.
-- Complete suite: 58 passed twice (1.06s and 0.82s).
-- Supporting syntax, dependency, point-in-time audit, and diff checks passed.
+- `SELECT-ALL-QUEUE-004` focused queue selection: 13 passed.
+- Complete suite: 62 passed twice (1.49s and 1.36s).
+- Supporting syntax, dependency consistency, and diff checks passed. `pip-audit` was unavailable in this cycle.
 
 ## Coverage gaps
 
