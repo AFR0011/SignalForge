@@ -50,7 +50,7 @@ def test_render_includes_accessibility_and_local_ui_contract(app, client):
     assert b'aria-live="polite"' in response.data
     assert b'id="drop-zone"' in response.data
     assert b'id="source-dialog"' in response.data
-    assert b"Choose source" in response.data
+    assert b"Choose a source" in response.data
     assert b"toastify" not in response.data.lower()
     assert b"/static/socket.io.min.js" in response.data
     assert b"/socket.io/socket.io.js" not in response.data
