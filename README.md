@@ -1,6 +1,6 @@
 # Signal Forge
 
-Signal Forge is a backend-focused Flask and Socket.IO application for isolated asynchronous media-processing jobs. A user imports a UTF-8 CSV track list, selects a bounded set of entries, and follows each job from admission through background processing to authorized file delivery.
+Signal Forge is a backend-focused Flask and Socket.IO application for isolated asynchronous media-processing jobs. A user imports a CSV track list, selects any or all imported tracks, and follows each job from admission through background processing to authorized file delivery.
 
 The project began as personal automation and is presented publicly for its engineering architecture: session-scoped authorization, atomic resource admission, bounded concurrency, path-confined artifacts, real-time progress, cleanup/recovery semantics, and automated reliability/security tests.
 
@@ -38,7 +38,7 @@ flowchart LR
     R -->|idle expiry / cleanup / recovery| D
 ```
 
-The source-processing implementation currently uses `yt-dlp`, FFmpeg, and an HTTPS artwork lookup. Those dependencies are deliberately kept behind the job/resource boundary rather than trusted with unbounded filesystem or request behavior.
+The source-processing implementation currently uses `yt-dlp`, FFmpeg, and an HTTPS iTunes artwork lookup that is embedded into the MP3 after download, with the YouTube thumbnail as a fallback. Search quotes the artist and title. Ranking keeps results whose channel matches the artist, rejects movie clips and extra-title mismatches, and can fall back to a trusted-channel video or a well-known label upload if no official audio is available. A 403 on one result retries the next acceptable match. Those dependencies are deliberately kept behind the job/resource boundary rather than trusted with unbounded filesystem or request behavior. If automatic download fails, the failed row can offer up to three leftover YouTube hits to choose from; the pick still goes through the same job reservation and size limits.
 
 ## Runtime model
 
@@ -64,9 +64,10 @@ The defaults are intentionally finite:
 | CSV bytes | 1 MB |
 | CSV rows | 2,000 |
 | Consumed field length | 500 characters |
-| Selected tracks per request | 20 |
+| Selected tracks per request | Entire imported list (up to 2,000 CSV rows) |
 | Concurrent media operations | 2 |
-| Queued/active tasks per job | 8 |
+| Reserved/active tasks per job | 8 |
+| Pending queued tracks per job | Remainder of the imported list |
 | Source media bytes | 100 MB |
 | Final artifact bytes | 100 MB |
 | Conservative reservation per admitted task | 100 MB |
@@ -77,13 +78,14 @@ The defaults are intentionally finite:
 | ZIP input | 250 MB |
 | Artwork response | 5 MB |
 
-A request that would exceed a per-job or process-wide ceiling is rejected as a whole before work is spawned. After processing, the conservative reservation is reconciled against the authoritative artifact size.
+A request that would exceed a per-job or process-wide ceiling is rejected as a whole before work is spawned when none of the selected tracks can be reserved or pending-queued. Larger selections are queued: up to eight tracks per job receive a conservative reservation immediately, and the rest wait in order until a reservation is released. After processing, the conservative reservation is reconciled against the authoritative artifact size.
 
 ## Requirements
 
 - Python **3.14.6** as declared in `.python-version`
 - FFmpeg, either supplied by the pinned `imageio-ffmpeg` package or explicitly configured with `FFMPEG_PATH`
-- Node.js only for the optional JavaScript syntax check used in CI
+- Deno 2.3 or newer for YouTube downloads (yt-dlp JavaScript challenge solver). The app looks on `PATH` and in common install locations, including a WinGet package folder on Windows. After a winget install, restart the app; if Deno is still missing, set `YTDLP_JS_RUNTIME_PATH`. Node.js is an optional runtime if `YTDLP_JS_RUNTIME=node` is set; it is also used for the optional JavaScript syntax check in CI
+- Render and other production hosts must provide that JS runtime themselves. `build.sh` does not install Deno
 
 Runtime and development dependencies are directly version-pinned in `requirements.txt` and `requirements-dev.txt`.
 
@@ -149,6 +151,8 @@ Store it in deployment/environment configuration. Never commit it.
 | `APP_ENV=production` | Enables production secret validation and secure cookies | Development |
 | `DATA_ROOT` | Parent directory for isolated job folders | OS temp directory + application folder |
 | `FFMPEG_PATH` | Optional executable override | Executable supplied by `imageio-ffmpeg` |
+| `YTDLP_JS_RUNTIME` | yt-dlp JavaScript runtime name (`deno` or `node`) | `deno` |
+| `YTDLP_JS_RUNTIME_PATH` | Optional path to that runtime executable | First `deno` or `node` on `PATH` |
 | `PORT` | Development/deployment port | `5000` |
 
 Additional task, storage, TTL, and capacity limits can be changed through Flask configuration when embedding or testing the app. All capacity and TTL settings must remain positive.
