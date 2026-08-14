@@ -3,7 +3,7 @@
 
   const body = document.body;
   const jobId = body.dataset.jobId;
-  const selectionLimit = Number(body.dataset.selectionLimit || 20);
+  const selectionLimit = Number(body.dataset.selectionLimit || 2000);
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
   const toastRegion = document.getElementById("toast-region");
   const rows = [...document.querySelectorAll(".track-table tbody tr")];
@@ -76,7 +76,8 @@
     const metric = document.getElementById("metric-selected");
     if (metric) metric.textContent = String(count);
     if (master) {
-      master.checked = Boolean(checkboxes.length) && count === Math.min(checkboxes.length, selectionLimit);
+      const selectable = Math.min(checkboxes.length, selectionLimit);
+      master.checked = Boolean(selectable) && count === selectable;
       master.indeterminate = count > 0 && !master.checked;
     }
   };
@@ -120,6 +121,11 @@
         link.removeAttribute("href");
       }
     }
+    const choose = row.querySelector(".choose-source");
+    if (choose) {
+      const show = data.status === "failed" && data.can_choose_source === true;
+      choose.hidden = !show;
+    }
     updateSummary();
   };
 
@@ -154,6 +160,126 @@
     const result = await mutate("/retry-failed", { headers: { "Content-Type": "application/json" }, body: "{}" });
     announce(`${result.started.length} failed track${result.started.length === 1 ? "" : "s"} queued.`, "success");
   }));
+
+  const sourceDialog = document.getElementById("source-dialog");
+  const sourceMeta = document.getElementById("source-dialog-meta");
+  const sourceCards = document.getElementById("source-dialog-cards");
+  let sourceOpener = null;
+  let sourceDialogGeneration = 0;
+  let sourceDialogAbortController = null;
+
+  const invalidateSourceDialogFetch = () => {
+    sourceDialogGeneration += 1;
+    sourceDialogAbortController?.abort();
+    sourceDialogAbortController = null;
+  };
+
+  const formatDuration = (seconds) => {
+    if (seconds == null || !Number.isFinite(Number(seconds))) return "";
+    const total = Math.max(0, Math.floor(Number(seconds)));
+    const minutes = Math.floor(total / 60);
+    const remain = String(total % 60).padStart(2, "0");
+    return `${minutes}:${remain}`;
+  };
+
+  const finalizeSourceDialogClose = () => {
+    invalidateSourceDialogFetch();
+    sourceOpener?.focus();
+    sourceOpener = null;
+  };
+
+  const closeSourceDialog = () => {
+    sourceDialog?.close();
+  };
+
+  const sourceCardButtons = () => [...(sourceCards?.querySelectorAll("button") || [])];
+
+  const disableSourceCardButtons = (activeButton) => {
+    sourceCardButtons().forEach((btn) => {
+      btn.disabled = true;
+    });
+    if (activeButton) activeButton.textContent = "Starting…";
+  };
+
+  const enableSourceCardButtons = () => {
+    sourceCardButtons().forEach((btn) => {
+      btn.disabled = false;
+      btn.textContent = "Use this source";
+    });
+  };
+
+  const openSourceDialog = async (button) => {
+    const row = button.closest("tr");
+    const index = Number(button.dataset.index);
+    if (!row || row.dataset.state !== "failed" || button.hidden) return;
+    invalidateSourceDialogFetch();
+    const generation = sourceDialogGeneration;
+    const abortController = new AbortController();
+    sourceDialogAbortController = abortController;
+    sourceOpener = button;
+    const title = row.querySelector('[data-label="Track"] strong')?.textContent || "this track";
+    const artist = row.querySelector('[data-label="Artist"]')?.textContent || "";
+    if (sourceMeta) sourceMeta.textContent = `${title} · ${artist}`;
+    if (sourceCards) sourceCards.replaceChildren();
+    sourceDialog?.showModal();
+    document.getElementById("source-dialog-close")?.focus();
+    try {
+      const data = await parseResponse(await fetch(`/tracks/${index}/sources`, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        signal: abortController.signal,
+      }));
+      if (generation !== sourceDialogGeneration) return;
+      (data.sources || []).forEach((source) => {
+        const card = document.createElement("article");
+        card.className = "source-card";
+        const image = document.createElement("img");
+        image.alt = "";
+        image.src = `/tracks/${index}/source-thumbs/${encodeURIComponent(source.id)}`;
+        image.addEventListener("error", () => image.remove());
+        const heading = document.createElement("h3");
+        heading.textContent = source.title || "Untitled";
+        const channel = document.createElement("p");
+        channel.textContent = [source.channel, formatDuration(source.duration)].filter(Boolean).join(" · ");
+        const use = document.createElement("button");
+        use.type = "button";
+        use.className = "button button-primary";
+        use.textContent = "Use this source";
+        use.addEventListener("click", async () => {
+          if (use.disabled) return;
+          disableSourceCardButtons(use);
+          try {
+            const result = await mutate("/choose-source", {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ index, video_id: source.id }),
+            });
+            setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" });
+            closeSourceDialog();
+            announce(`${result.started.length} track${result.started.length === 1 ? "" : "s"} queued.`, "success");
+          } catch (error) {
+            enableSourceCardButtons();
+            announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
+          }
+        });
+        card.append(image, heading, channel, use);
+        sourceCards?.append(card);
+      });
+    } catch (error) {
+      if (generation !== sourceDialogGeneration || error.name === "AbortError") return;
+      closeSourceDialog();
+      throw error;
+    }
+  };
+
+  document.querySelectorAll(".choose-source").forEach((button) => {
+    button.addEventListener("click", () => {
+      openSourceDialog(button).catch((error) => announce(error.message, "error"));
+    });
+  });
+  sourceDialog?.addEventListener("close", finalizeSourceDialogClose);
+  sourceDialog?.addEventListener("click", (event) => {
+    if (event.target === sourceDialog) closeSourceDialog();
+  });
 
   zipButton?.addEventListener("click", () => withBusyButton(zipButton, "Building ZIP…", async () => {
     const response = await fetch("/download_zip", {
