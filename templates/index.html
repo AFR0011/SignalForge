@@ -24,7 +24,7 @@
       <div>
         <p class="eyebrow">CSV → AUDIO WORKSPACE</p>
         <h1 id="page-title">Turn a track list into an organized audio queue.</h1>
-        <p class="lede">Import a UTF-8 CSV, choose up to {{ selection_limit }} tracks, and follow every file from queue to download.</p>
+        <p class="lede">Import a CSV track list, select every track you want, and follow each file from queue to download.</p>
       </div>
       <div class="hero-visual" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
@@ -92,11 +92,11 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
             <p class="step-label">03 / QUEUE</p>
             <h2 id="queue-title">Choose what to process</h2>
           </div>
-          <span class="selection-note">Maximum {{ selection_limit }} per request</span>
+          <span class="selection-note">{% if songs|length > selection_limit %}Maximum {{ selection_limit }} per request{% else %}Queue the full imported list{% endif %}</span>
         </div>
 
         <div class="toolbar" aria-label="Queue controls">
-          <button class="button button-quiet" id="select-all" type="button">Select first {{ selection_limit }}</button>
+          <button class="button button-quiet" id="select-all" type="button">Select all</button>
           <button class="button button-primary" id="download-selected" type="button">Start selected</button>
           <button class="button button-quiet" id="retry-failed" type="button">Retry failed</button>
           <button class="button button-quiet" id="download-zip" type="button" {% if not job.files %}hidden{% endif %}>Download ZIP</button>
@@ -107,7 +107,7 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
           <table class="track-table">
             <thead>
               <tr>
-                <th class="check-cell"><input id="master-checkbox" type="checkbox" aria-label="Select first {{ selection_limit }} tracks"></th>
+                <th class="check-cell"><input id="master-checkbox" type="checkbox" aria-label="Select all tracks"></th>
                 <th>Track</th>
                 <th>Artist</th>
                 <th>Album</th>
@@ -130,6 +130,7 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
                 </td>
                 <td class="action-cell" data-label="File">
                   <a class="download-link" {% if index|string in job.files %}href="{{ job.files[index|string] }}"{% else %}hidden{% endif %}>Download</a>
+                  <button class="button button-quiet choose-source" type="button" data-index="{{ index }}" {% if not state.get('can_choose_source') %}hidden{% endif %}>Choose source</button>
                 </td>
               </tr>
             {% endfor %}
@@ -145,10 +146,18 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
       <p>Import a CSV to open the dashboard and selection controls.</p>
     </section>
     {% endif %}
+    <dialog id="source-dialog" aria-labelledby="source-dialog-title">
+      <form method="dialog" class="source-dialog-chrome">
+        <h2 id="source-dialog-title">Choose a source</h2>
+        <p id="source-dialog-meta"></p>
+        <div id="source-dialog-cards" class="source-cards"></div>
+        <button class="button button-quiet" id="source-dialog-close" value="cancel">Close</button>
+      </form>
+    </dialog>
   </main>
 
   <footer><span>Signal Forge</span><span>One worker · isolated jobs · bounded operations</span></footer>
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

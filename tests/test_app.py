@@ -49,6 +49,8 @@ def test_render_includes_accessibility_and_local_ui_contract(app, client):
     assert b'class="skip-link"' in response.data
     assert b'aria-live="polite"' in response.data
     assert b'id="drop-zone"' in response.data
+    assert b'id="source-dialog"' in response.data
+    assert b"Choose source" in response.data
     assert b"toastify" not in response.data.lower()
     assert b"/static/socket.io.min.js" in response.data
     assert b"/socket.io/socket.io.js" not in response.data
@@ -57,6 +59,23 @@ def test_render_includes_accessibility_and_local_ui_contract(app, client):
     assert script.mimetype in {"application/javascript", "text/javascript"}
     css = Path("static/style.css").read_text(encoding="utf-8")
     assert "prefers-reduced-motion" in css
+
+
+def test_failed_row_renders_choose_source_when_flag_set(app, client):
+    upload_csv(app, client)
+    job = current_job(client)
+    job.failed.add(0)
+    job.statuses[0] = {
+        "job_id": job.job_id,
+        "index": 0,
+        "status": "failed",
+        "message": "Download failed. You can retry this track or choose a source.",
+        "can_choose_source": True,
+    }
+    page = client.get("/")
+    assert page.status_code == 200
+    assert b'class="button button-quiet choose-source"' in page.data
+    assert b'id="source-dialog"' in page.data
 
 
 @pytest.mark.parametrize("path", ["/this-path-does-not-exist", "/favicon.ico"])

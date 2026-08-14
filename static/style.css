@@ -287,6 +287,16 @@ tr[data-state="success"] .status-badge i { background: var(--acid); }
 tr[data-state="failed"] .status-badge i { background: var(--danger); }
 .track-progress { display: block; width: 140px; margin-top: 7px; }
 .download-link { display: inline-block; padding: 6px 9px; color: var(--acid-ink); background: var(--acid); border-radius: 7px; font-size: .74rem; font-weight: 800; text-decoration: none; }
+.choose-source { margin-left: 8px; }
+.source-dialog-chrome { min-width: min(520px, 100%); padding: 20px; }
+.source-cards { display: grid; gap: 12px; margin: 16px 0; }
+.source-card { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.source-card img { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; background: #0d1011; }
+.source-card h3 { margin: 0; color: var(--ink); font-size: .92rem; }
+.source-card p { margin: 0; color: var(--muted); font-size: .78rem; }
+.source-card .button { grid-column: 2; justify-self: start; }
+#source-dialog { border: 1px solid var(--line); border-radius: 16px; background: #121516; color: var(--ink); }
+#source-dialog::backdrop { background: rgb(0 0 0 / 55%); }
 
 .empty-state { padding: 80px 24px; text-align: center; color: var(--muted); }
 .empty-state > span { color: var(--acid); font-size: 3rem; }
