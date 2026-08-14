@@ -167,7 +167,7 @@
   let sourceOpener = null;
 
   const formatDuration = (seconds) => {
-    if (!Number.isFinite(Number(seconds))) return "";
+    if (seconds == null || !Number.isFinite(Number(seconds))) return "";
     const total = Math.max(0, Math.floor(Number(seconds)));
     const minutes = Math.floor(total / 60);
     const remain = String(total % 60).padStart(2, "0");
@@ -212,13 +212,12 @@
         use.className = "button button-primary";
         use.textContent = "Use this source";
         use.addEventListener("click", () => withBusyButton(use, "Starting…", async () => {
-          sourceCards?.querySelectorAll("button").forEach((item) => { item.disabled = true; });
-          setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" });
-          closeSourceDialog();
           const result = await mutate("/choose-source", {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ index, video_id: source.id }),
           });
+          setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" });
+          closeSourceDialog();
           announce(`${result.started.length} track${result.started.length === 1 ? "" : "s"} queued.`, "success");
         }));
         card.append(image, heading, channel, use);

@@ -77,6 +77,13 @@ def test_failed_row_renders_choose_source_when_flag_set(app, client):
     assert b'class="button button-quiet choose-source"' in page.data
     assert b'id="source-dialog"' in page.data
 
+    job.statuses[0]["status"] = "queued"
+    non_failed_page = client.get("/")
+    assert (
+        b'class="button button-quiet choose-source" type="button" data-index="0" hidden'
+        in non_failed_page.data
+    )
+
 
 @pytest.mark.parametrize("path", ["/this-path-does-not-exist", "/favicon.ico"])
 def test_missing_html_pages_return_404_not_500(app, client, path):

@@ -130,7 +130,7 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
                 </td>
                 <td class="action-cell" data-label="File">
                   <a class="download-link" {% if index|string in job.files %}href="{{ job.files[index|string] }}"{% else %}hidden{% endif %}>Download</a>
-                  <button class="button button-quiet choose-source" type="button" data-index="{{ index }}" {% if not state.get('can_choose_source') %}hidden{% endif %}>Choose source</button>
+                  <button class="button button-quiet choose-source" type="button" data-index="{{ index }}" {% if state.get('status') != 'failed' or not state.get('can_choose_source') %}hidden{% endif %}>Choose source</button>
                 </td>
               </tr>
             {% endfor %}
