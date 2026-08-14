@@ -1064,12 +1064,34 @@ def youtube_watch_url(entry: dict[str, Any]) -> str | None:
 
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 PICKER_SOURCE_LIMIT = 3
+SOURCE_THUMB_MAX_BYTES = 200_000
+YOUTUBE_THUMB_HOST = "i.ytimg.com"
 
 
 def youtube_video_id(value: str) -> str | None:
     if isinstance(value, str) and YOUTUBE_VIDEO_ID_RE.fullmatch(value):
         return value
     return None
+
+
+def fetch_source_thumbnail(video_id: str, max_bytes: int) -> bytes | None:
+    if youtube_video_id(video_id) is None:
+        return None
+    try:
+        image = requests.get(
+            f"https://{YOUTUBE_THUMB_HOST}/vi/{video_id}/hqdefault.jpg",
+            timeout=(3.05, 8),
+            stream=True,
+            allow_redirects=False,
+        )
+        if image.status_code != 200:
+            return None
+        payload = _read_limited_response(image, max_bytes)
+        if payload.startswith(b"\xff\xd8"):
+            return payload
+        return None
+    except (requests.RequestException, ValueError):
+        return None
 
 
 def collect_picker_sources(entries: list[dict[str, Any]], tried_ids: set[str]) -> list[dict[str, Any]]:
@@ -1807,6 +1829,74 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 if index in reserved_set or index in pending:
                     accepted.append(index)
         return accepted
+
+    def failed_track_locked(job: Job, index: int) -> bool:
+        if index < 0 or index >= len(job.songs):
+            return False
+        if index in job.reserved_indices or index in job.pending_indices:
+            return False
+        return job.statuses.get(index, {}).get("status") == "failed"
+
+    @flask_app.route("/tracks/<int:index>/sources", methods=["GET"])
+    @limiter.limit("60 per minute")
+    def track_sources(index: int) -> Any:
+        job = owned_job()
+        if job is None:
+            return jsonify(error="Current job is unavailable; refresh the page"), 403
+        with job.lock:
+            if not failed_track_locked(job, index):
+                return jsonify(error="Alternate sources are available only for a failed track"), 409
+            sources = list(job.source_choices.get(index) or [])
+        return jsonify(sources=sources)
+
+    @flask_app.route("/choose-source", methods=["POST"])
+    @limiter.limit("20 per minute")
+    def choose_source() -> Any:
+        job, error_response = mutation_job()
+        if error_response:
+            return error_response
+        assert job is not None
+        payload = request.get_json(silent=True) or {}
+        try:
+            index = int(payload.get("index"))
+        except (TypeError, ValueError):
+            return jsonify(error="Selection is invalid"), 400
+        video_id = youtube_video_id(str(payload.get("video_id") or ""))
+        if video_id is None:
+            return jsonify(error="That source is not available"), 409
+        with job.lock:
+            if not failed_track_locked(job, index):
+                return jsonify(error="Choose a source only for a failed track"), 409
+            allowed = {item.get("id") for item in job.source_choices.get(index) or []}
+            if video_id not in allowed:
+                return jsonify(error="That source is not available"), 409
+            job.forced_sources[index] = video_id
+        try:
+            started = queue_indices(job, [index])
+        except (JobAdmissionError, JobUnavailableError) as exc:
+            with job.lock:
+                if job.forced_sources.get(index) == video_id:
+                    job.forced_sources.pop(index, None)
+            return jsonify(error=str(exc)), 409
+        return jsonify(job_id=job.job_id, started=started), 202
+
+    @flask_app.route("/tracks/<int:index>/source-thumbs/<video_id>", methods=["GET"])
+    @limiter.limit("60 per minute")
+    def track_source_thumb(index: int, video_id: str) -> Any:
+        job = owned_job()
+        if job is None:
+            return jsonify(error="File not found"), 404
+        bound = youtube_video_id(video_id)
+        with job.lock:
+            allowed = {item.get("id") for item in job.source_choices.get(index) or []}
+            if not failed_track_locked(job, index) or bound is None or bound not in allowed:
+                return jsonify(error="File not found"), 404
+        image = fetch_source_thumbnail(
+            bound, min(SOURCE_THUMB_MAX_BYTES, int(flask_app.config["ARTWORK_MAX_BYTES"]))
+        )
+        if not image:
+            return jsonify(error="File not found"), 404
+        return flask_app.response_class(image, mimetype="image/jpeg")
 
     @flask_app.route("/download", methods=["POST"])
     @limiter.limit("20 per minute")

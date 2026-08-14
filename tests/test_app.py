@@ -214,6 +214,104 @@ def test_process_song_forced_watch_url_403_drops_that_picker_id(app, client, mon
     assert 0 not in job.forced_sources
 
 
+def test_choose_source_routes_require_failed_stored_id(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    token = csrf_for(app, client)
+    assert client.get("/tracks/0/sources").status_code == 409
+    job.failed.add(0)
+    job.statuses[0] = {
+        "job_id": job.job_id,
+        "index": 0,
+        "status": "failed",
+        "message": "failed",
+        "can_choose_source": True,
+    }
+    job.source_choices[0] = [
+        {"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201},
+    ]
+    listed = client.get("/tracks/0/sources")
+    assert listed.status_code == 200
+    assert listed.json["sources"][0]["id"] == "labellabel1"
+    no_csrf = client.post("/choose-source", json={"index": 0, "video_id": "labellabel1"})
+    assert no_csrf.status_code == 400
+    forged = client.post(
+        "/choose-source",
+        json={"index": 0, "video_id": "forgedforged"},
+        headers={"X-CSRFToken": token},
+    )
+    assert forged.status_code == 409
+    captured: dict[str, str] = {}
+
+    def fake_download(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        captured["watch_url"] = kwargs.get("watch_url") or ""
+        output_base.with_suffix(".mp3").write_bytes(b"audio")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fake_download)
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(app.extensions["socketio_instance"], "emit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        app.extensions["socketio_instance"],
+        "start_background_task",
+        lambda target, *args, **kwargs: target(*args, **kwargs),
+    )
+    accepted = client.post(
+        "/choose-source",
+        json={"index": 0, "video_id": "labellabel1"},
+        headers={"X-CSRFToken": token},
+    )
+    assert accepted.status_code == 202
+    if not captured.get("watch_url") and (0 in job.reserved_indices or 0 in job.pending_indices):
+        application.process_song(
+            app,
+            app.extensions["socketio_instance"],
+            job.job_id,
+            0,
+            dict(job.songs[0]),
+            job.reservation_sizes.get(0) or app.config["TASK_BYTE_RESERVATION"],
+        )
+    assert captured.get("watch_url") == "https://www.youtube.com/watch?v=labellabel1"
+
+
+def test_source_thumbnail_allows_only_stored_id(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    job.failed.add(0)
+    job.statuses[0] = {"status": "failed", "index": 0, "job_id": job.job_id, "message": "failed"}
+    job.source_choices[0] = [{"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201}]
+    jpeg = b"\xff\xd8" + b"thumb" + b"\xff\xd9"
+    captured: dict[str, Any] = {}
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "image/jpeg", "Content-Length": str(len(jpeg))}
+        content = jpeg
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, _size):
+            yield jpeg
+
+        def close(self):
+            return None
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["allow_redirects"] = kwargs.get("allow_redirects")
+        return FakeResponse()
+
+    monkeypatch.setattr(application.requests, "get", fake_get)
+    missing = client.get("/tracks/0/source-thumbs/forgedforged")
+    assert missing.status_code == 404
+    ok = client.get("/tracks/0/source-thumbs/labellabel1")
+    assert ok.status_code == 200
+    assert ok.data.startswith(b"\xff\xd8")
+    assert captured["url"] == "https://i.ytimg.com/vi/labellabel1/hqdefault.jpg"
+    assert captured["allow_redirects"] is False
+
+
 def test_two_sessions_cannot_join_or_access_files_or_status(app):
     first = app.test_client()
     second = app.test_client()
