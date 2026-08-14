@@ -165,6 +165,14 @@
   const sourceMeta = document.getElementById("source-dialog-meta");
   const sourceCards = document.getElementById("source-dialog-cards");
   let sourceOpener = null;
+  let sourceDialogGeneration = 0;
+  let sourceDialogAbortController = null;
+
+  const invalidateSourceDialogFetch = () => {
+    sourceDialogGeneration += 1;
+    sourceDialogAbortController?.abort();
+    sourceDialogAbortController = null;
+  };
 
   const formatDuration = (seconds) => {
     if (seconds == null || !Number.isFinite(Number(seconds))) return "";
@@ -175,6 +183,7 @@
   };
 
   const closeSourceDialog = () => {
+    invalidateSourceDialogFetch();
     sourceDialog?.close();
     sourceOpener?.focus();
     sourceOpener = null;
@@ -200,6 +209,10 @@
     const row = button.closest("tr");
     const index = Number(button.dataset.index);
     if (!row || row.dataset.state !== "failed" || button.hidden) return;
+    invalidateSourceDialogFetch();
+    const generation = sourceDialogGeneration;
+    const abortController = new AbortController();
+    sourceDialogAbortController = abortController;
     sourceOpener = button;
     const title = row.querySelector('[data-label="Track"] strong')?.textContent || "this track";
     const artist = row.querySelector('[data-label="Artist"]')?.textContent || "";
@@ -211,7 +224,9 @@
       const data = await parseResponse(await fetch(`/tracks/${index}/sources`, {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
+        signal: abortController.signal,
       }));
+      if (generation !== sourceDialogGeneration) return;
       (data.sources || []).forEach((source) => {
         const card = document.createElement("article");
         card.className = "source-card";
@@ -247,6 +262,7 @@
         sourceCards?.append(card);
       });
     } catch (error) {
+      if (generation !== sourceDialogGeneration || error.name === "AbortError") return;
       closeSourceDialog();
       throw error;
     }
