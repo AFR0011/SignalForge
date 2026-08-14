@@ -160,6 +160,60 @@ def test_worker_runs_without_request_session_and_targets_only_job_room(app, clie
     assert emitted[-1][1]["download_url"].startswith(f"/jobs/{job.job_id}/files/")
 
 
+def test_process_song_stores_picker_sources_and_can_choose_flag(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+
+    def fail_download(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        out = kwargs.get("picker_out")
+        if out is not None:
+            out.clear()
+            out.extend([{
+                "id": "labellabel1",
+                "title": "Halo Official Audio",
+                "channel": "Label Records",
+                "duration": 201,
+            }])
+        raise application.DownloadError("No matching audio source found")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fail_download)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert 0 in job.failed
+    assert job.source_choices[0][0]["id"] == "labellabel1"
+    assert job.statuses[0]["can_choose_source"] is True
+    assert "choose a source" in job.statuses[0]["message"]
+
+
+def test_process_song_forced_watch_url_403_drops_that_picker_id(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    job.source_choices[0] = [
+        {"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201},
+        {"id": "lyriclyric1", "title": "Halo Lyric Video", "channel": "Starling", "duration": 202},
+    ]
+    job.forced_sources[0] = "labellabel1"
+    captured: dict[str, str] = {}
+
+    def fail_forced(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        captured["watch_url"] = kwargs.get("watch_url") or ""
+        raise application.DownloadError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fail_forced)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert captured["watch_url"] == "https://www.youtube.com/watch?v=labellabel1"
+    assert [item["id"] for item in job.source_choices[0]] == ["lyriclyric1"]
+    assert job.statuses[0]["can_choose_source"] is True
+    assert 0 not in job.forced_sources
+
+
 def test_two_sessions_cannot_join_or_access_files_or_status(app):
     first = app.test_client()
     second = app.test_client()

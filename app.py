@@ -70,6 +70,8 @@ class Job:
     statuses: dict[int, dict[str, Any]] = field(default_factory=dict)
     files: dict[int, str] = field(default_factory=dict)
     failed: set[int] = field(default_factory=set)
+    source_choices: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
+    forced_sources: dict[int, str] = field(default_factory=dict)
     lifecycle: str = "accepting"
     active_count: int = 0
     reserved_bytes: int = 0
@@ -1397,6 +1399,12 @@ def process_song(
         except Exception:
             LOGGER.exception("Could not emit progress for job %s track %s", job_id, index)
 
+    with job.lock:
+        forced_id = job.forced_sources.pop(index, "")
+        if not forced_id:
+            job.source_choices.pop(index, None)
+    watch = f"https://www.youtube.com/watch?v={forced_id}" if youtube_video_id(forced_id) else ""
+    picker_out: list[dict[str, Any]] = []
     semaphore: threading.BoundedSemaphore = app.extensions["download_semaphore"]
     try:
         with semaphore:
@@ -1417,6 +1425,8 @@ def process_song(
                 int(app.config["MAX_SOURCE_BYTES"]),
                 artist=song["Artist"],
                 title=song["Song"],
+                watch_url=watch,
+                picker_out=picker_out,
             )
             tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
             actual_bytes = filepath.stat().st_size
@@ -1432,6 +1442,9 @@ def process_song(
             )
             if not retained:
                 raise ValueError("Downloaded file exceeds the remaining per-job disk budget")
+            with job.lock:
+                job.source_choices.pop(index, None)
+                job.forced_sources.pop(index, None)
             artifact_url = f"/jobs/{job_id}/files/{quote(filename)}"
             publish("success", "Ready to download", 100, download_url=artifact_url)
     except Exception:
@@ -1440,7 +1453,26 @@ def process_song(
             _remove_task_outputs(output_base)
         with job.lock:
             job.failed.add(index)
-        publish("failed", "Download failed. You can retry this track.")
+            if forced_id:
+                remaining = [
+                    item for item in job.source_choices.get(index, [])
+                    if item.get("id") != forced_id
+                ]
+                if remaining:
+                    job.source_choices[index] = remaining
+                else:
+                    job.source_choices.pop(index, None)
+            elif picker_out:
+                job.source_choices[index] = list(picker_out)
+            else:
+                job.source_choices.pop(index, None)
+            can_choose = bool(job.source_choices.get(index))
+        message = (
+            "Download failed. You can retry this track or choose a source."
+            if can_choose
+            else "Download failed. No alternate sources found."
+        )
+        publish("failed", message, can_choose_source=can_choose)
     finally:
         job_registry.release_task(job, index, reserved)
         drain_pending(app, sio, job)
