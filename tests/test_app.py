@@ -214,6 +214,31 @@ def test_process_song_stores_picker_sources_and_can_choose_flag(app, client, mon
     assert "choose a source" in job.statuses[0]["message"]
 
 
+def test_process_song_empty_picker_stores_no_alternate_sources_message(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+
+    def fail_download(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        out = kwargs.get("picker_out")
+        filled = kwargs.get("picker_filled")
+        if out is not None:
+            out.clear()
+        if filled is not None:
+            filled[0] = True
+        raise application.DownloadError("No matching audio source found")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fail_download)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert 0 in job.failed
+    assert not job.source_choices.get(0)
+    assert job.statuses[0]["can_choose_source"] is False
+    assert job.statuses[0]["message"] == "Download failed. No alternate sources found."
+
+
 def test_process_song_forced_watch_url_403_drops_that_picker_id(app, client, monkeypatch):
     upload_csv(app, client)
     job = current_job(client)
@@ -240,6 +265,32 @@ def test_process_song_forced_watch_url_403_drops_that_picker_id(app, client, mon
     assert 0 not in job.forced_sources
 
 
+def test_process_song_forced_watch_url_non_403_keeps_picker_id(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    job.source_choices[0] = [
+        {"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201},
+        {"id": "lyriclyric1", "title": "Halo Lyric Video", "channel": "Starling", "duration": 202},
+    ]
+    job.forced_sources[0] = "labellabel1"
+    captured: dict[str, str] = {}
+
+    def fail_forced(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        captured["watch_url"] = kwargs.get("watch_url") or ""
+        raise application.DownloadError("network")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fail_forced)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert captured["watch_url"] == "https://www.youtube.com/watch?v=labellabel1"
+    assert [item["id"] for item in job.source_choices[0]] == ["labellabel1", "lyriclyric1"]
+    assert job.statuses[0]["can_choose_source"] is True
+    assert "choose a source" in job.statuses[0]["message"]
+
+
 def test_choose_source_routes_require_failed_stored_id(app, client, monkeypatch):
     upload_csv(app, client)
     job = current_job(client)
@@ -263,7 +314,7 @@ def test_choose_source_routes_require_failed_stored_id(app, client, monkeypatch)
     assert no_csrf.status_code == 400
     forged = client.post(
         "/choose-source",
-        json={"index": 0, "video_id": "forgedforged"},
+        json={"index": 0, "video_id": "unboundxyz1"},
         headers={"X-CSRFToken": token},
     )
     assert forged.status_code == 409
@@ -329,7 +380,7 @@ def test_source_thumbnail_allows_only_stored_id(app, client, monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(application.requests, "get", fake_get)
-    missing = client.get("/tracks/0/source-thumbs/forgedforged")
+    missing = client.get("/tracks/0/source-thumbs/unboundxyz1")
     assert missing.status_code == 404
     ok = client.get("/tracks/0/source-thumbs/labellabel1")
     assert ok.status_code == 200
@@ -1125,6 +1176,8 @@ def test_actual_byte_overflow_deletes_output_and_reconciles_counters(app, client
     assert job.files == {}
     assert job.failed == {0}
     assert list(job.directory.iterdir()) == []
+    assert job.statuses[0]["message"] == "Download failed. You can retry this track."
+    assert job.statuses[0].get("can_choose_source") is not True
 
 
 def test_start_and_worker_failures_release_reservations_and_outputs(app, client, monkeypatch):
@@ -1237,6 +1290,7 @@ def test_source_limit_is_passed_to_ytdlp_and_equality_is_allowed(tmp_path, monke
     assert captured["queries"][0].startswith("https://www.youtube.com/watch?v=")
     assert captured["extractor_args"]["youtube"]["player_client"] == ["default", "ios", "-android_sdkless"]
     assert callable(captured["match_filter"])
+    assert captured["noplaylist"] is True
 
 
 @pytest.mark.parametrize("field", ["total_bytes", "total_bytes_estimate", "downloaded_bytes"])

@@ -1272,6 +1272,7 @@ def download_song_from_youtube(
     title: str = "",
     watch_url: str = "",
     picker_out: list[dict[str, Any]] | None = None,
+    picker_filled: list[bool] | None = None,
 ) -> None:
     def progress_hook(data: dict[str, Any]) -> None:
         for key in ("total_bytes", "total_bytes_estimate", "downloaded_bytes"):
@@ -1309,6 +1310,7 @@ def download_song_from_youtube(
         "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
         "match_filter": undesired_youtube_source,
         "writethumbnail": True,
+        "noplaylist": True,
     }
 
     def remove_leftovers() -> None:
@@ -1342,6 +1344,8 @@ def download_song_from_youtube(
         if picker_out is not None:
             picker_out.clear()
             picker_out.extend(collect_picker_sources(entries, tried_ids))
+        if picker_filled is not None:
+            picker_filled[0] = True
 
     if not candidates:
         fill_picker()
@@ -1427,6 +1431,7 @@ def process_song(
             job.source_choices.pop(index, None)
     watch = f"https://www.youtube.com/watch?v={forced_id}" if youtube_video_id(forced_id) else ""
     picker_out: list[dict[str, Any]] = []
+    picker_filled = [False]
     semaphore: threading.BoundedSemaphore = app.extensions["download_semaphore"]
     try:
         with semaphore:
@@ -1449,6 +1454,7 @@ def process_song(
                 title=song["Song"],
                 watch_url=watch,
                 picker_out=picker_out,
+                picker_filled=picker_filled,
             )
             tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
             actual_bytes = filepath.stat().st_size
@@ -1469,31 +1475,33 @@ def process_song(
                 job.forced_sources.pop(index, None)
             artifact_url = f"/jobs/{job_id}/files/{quote(filename)}"
             publish("success", "Ready to download", 100, download_url=artifact_url)
-    except Exception:
+    except Exception as exc:
         LOGGER.exception("Job %s track %s failed", job_id, index)
         if not retained:
             _remove_task_outputs(output_base)
         with job.lock:
             job.failed.add(index)
             if forced_id:
-                remaining = [
-                    item for item in job.source_choices.get(index, [])
-                    if item.get("id") != forced_id
-                ]
-                if remaining:
-                    job.source_choices[index] = remaining
-                else:
-                    job.source_choices.pop(index, None)
+                if "403" in str(exc):
+                    remaining = [
+                        item for item in job.source_choices.get(index, [])
+                        if item.get("id") != forced_id
+                    ]
+                    if remaining:
+                        job.source_choices[index] = remaining
+                    else:
+                        job.source_choices.pop(index, None)
             elif picker_out:
                 job.source_choices[index] = list(picker_out)
             else:
                 job.source_choices.pop(index, None)
             can_choose = bool(job.source_choices.get(index))
-        message = (
-            "Download failed. You can retry this track or choose a source."
-            if can_choose
-            else "Download failed. No alternate sources found."
-        )
+        if can_choose:
+            message = "Download failed. You can retry this track or choose a source."
+        elif picker_filled[0] or (forced_id and "403" in str(exc)):
+            message = "Download failed. No alternate sources found."
+        else:
+            message = "Download failed. You can retry this track."
         publish("failed", message, can_choose_source=can_choose)
     finally:
         job_registry.release_task(job, index, reserved)
