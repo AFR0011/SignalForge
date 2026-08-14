@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -75,6 +76,7 @@ class Job:
     retained_bytes: int = 0
     reserved_indices: set[int] = field(default_factory=set)
     active_indices: set[int] = field(default_factory=set)
+    pending_indices: list[int] = field(default_factory=list)
     reservation_sizes: dict[int, int] = field(default_factory=dict)
     last_activity: float = 0.0
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
@@ -171,6 +173,60 @@ class JobRegistry:
                 if self._jobs.get(job.job_id) is job and job.lifecycle == "accepting":
                     job.last_activity = self.now()
 
+    @staticmethod
+    def _busy_locked(job: Job) -> bool:
+        return bool(
+            job.active_count
+            or job.reserved_bytes
+            or job.reserved_indices
+            or job.active_indices
+            or job.pending_indices
+        )
+
+    @staticmethod
+    def _queued_status(job: Job, index: int) -> dict[str, Any]:
+        return {
+            "job_id": job.job_id,
+            "index": index,
+            "status": "queued",
+            "message": "Queued",
+        }
+
+    @staticmethod
+    def _cannot_reserve_locked(
+        job: Job,
+        extra_count: int,
+        extra_bytes: int,
+        task_limit: int,
+        job_byte_limit: int,
+        process_total: int,
+        total_byte_limit: int | None,
+    ) -> str | None:
+        if job.active_count + extra_count > task_limit:
+            return "task"
+        if job.retained_bytes + job.reserved_bytes + extra_bytes > job_byte_limit:
+            return "job_bytes"
+        if total_byte_limit is not None and process_total + extra_bytes > total_byte_limit:
+            return "total_bytes"
+        return None
+
+    def _apply_reservation_locked(self, job: Job, index: int, reservation_bytes: int) -> None:
+        job.active_count += 1
+        job.reserved_bytes += reservation_bytes
+        job.reserved_indices.add(index)
+        job.active_indices.add(index)
+        job.reservation_sizes[index] = reservation_bytes
+        job.statuses[index] = self._queued_status(job, index)
+
+    def _fail_budget_locked(self, job: Job, index: int) -> None:
+        job.failed.add(index)
+        job.statuses[index] = {
+            "job_id": job.job_id,
+            "index": index,
+            "status": "failed",
+            "message": "This request exceeds the remaining per-job disk budget",
+        }
+
     def reserve_indices(
         self,
         job: Job,
@@ -190,32 +246,145 @@ class JobRegistry:
                     index
                     for index in indices
                     if index not in job.reserved_indices
+                    and index not in job.pending_indices
                     and job.statuses.get(index, {}).get("status") not in {"success"}
                 ]
-                if job.active_count + len(candidates) > task_limit:
+                blocked = self._cannot_reserve_locked(
+                    job,
+                    len(candidates),
+                    reservation_bytes * len(candidates),
+                    task_limit,
+                    job_byte_limit,
+                    process_total,
+                    total_byte_limit,
+                )
+                if blocked == "task":
                     raise JobAdmissionError(
                         f"This job allows at most {task_limit} queued or active tasks"
                     )
-                requested_bytes = reservation_bytes * len(candidates)
-                if job.retained_bytes + job.reserved_bytes + requested_bytes > job_byte_limit:
+                if blocked == "job_bytes":
                     raise JobAdmissionError("This request exceeds the remaining per-job disk budget")
-                if total_byte_limit is not None and process_total + requested_bytes > total_byte_limit:
+                if blocked == "total_bytes":
                     raise JobAdmissionError("This request exceeds the remaining service-wide disk budget")
                 for index in candidates:
-                    job.active_count += 1
-                    job.reserved_bytes += reservation_bytes
-                    job.reserved_indices.add(index)
-                    job.active_indices.add(index)
-                    job.reservation_sizes[index] = reservation_bytes
-                    job.statuses[index] = {
-                        "job_id": job.job_id,
-                        "index": index,
-                        "status": "queued",
-                        "message": "Queued",
-                    }
+                    self._apply_reservation_locked(job, index, reservation_bytes)
                 if candidates:
                     job.last_activity = self.now()
                 return candidates
+
+    def enqueue_indices(
+        self,
+        job: Job,
+        indices: list[int],
+        task_limit: int,
+        reservation_bytes: int,
+        job_byte_limit: int,
+        total_byte_limit: int | None = None,
+    ) -> tuple[list[int], list[int]]:
+        """Reserve a greedy prefix now and pending-queue the remainder without reservations."""
+        with self._lock:
+            process_total = self._total_bytes_locked()
+            with job.lock:
+                if self._jobs.get(job.job_id) is not job or job.lifecycle != "accepting":
+                    raise JobUnavailableError("Job is closing; refresh before starting more work")
+                reserved_now: list[int] = []
+                queued: list[int] = []
+                failed_now = False
+                for index in indices:
+                    if (
+                        index in job.reserved_indices
+                        or index in job.pending_indices
+                        or job.statuses.get(index, {}).get("status") == "success"
+                    ):
+                        continue
+                    blocked = self._cannot_reserve_locked(
+                        job,
+                        1,
+                        reservation_bytes,
+                        task_limit,
+                        job_byte_limit,
+                        process_total,
+                        total_byte_limit,
+                    )
+                    if blocked is None:
+                        self._apply_reservation_locked(job, index, reservation_bytes)
+                        process_total += reservation_bytes
+                        reserved_now.append(index)
+                        queued.append(index)
+                        continue
+                    if job.retained_bytes + reservation_bytes > job_byte_limit:
+                        self._fail_budget_locked(job, index)
+                        failed_now = True
+                        continue
+                    job.pending_indices.append(index)
+                    job.statuses[index] = self._queued_status(job, index)
+                    queued.append(index)
+                if queued:
+                    job.last_activity = self.now()
+                elif failed_now:
+                    raise JobAdmissionError("This request exceeds the remaining per-job disk budget")
+                return reserved_now, queued
+
+    def admit_pending(
+        self,
+        job: Job,
+        task_limit: int,
+        reservation_bytes: int,
+        job_byte_limit: int,
+        total_byte_limit: int | None = None,
+    ) -> list[int]:
+        """Admit pending indices that now fit task and byte ceilings."""
+        with self._lock:
+            process_total = self._total_bytes_locked()
+            with job.lock:
+                if self._jobs.get(job.job_id) is not job or job.lifecycle != "accepting":
+                    return []
+                admitted: list[int] = []
+                remaining: list[int] = []
+                for index in job.pending_indices:
+                    if index in job.reserved_indices or job.statuses.get(index, {}).get("status") == "success":
+                        continue
+                    blocked = self._cannot_reserve_locked(
+                        job,
+                        1,
+                        reservation_bytes,
+                        task_limit,
+                        job_byte_limit,
+                        process_total,
+                        total_byte_limit,
+                    )
+                    if blocked is None:
+                        self._apply_reservation_locked(job, index, reservation_bytes)
+                        process_total += reservation_bytes
+                        admitted.append(index)
+                        continue
+                    if job.retained_bytes + reservation_bytes > job_byte_limit:
+                        self._fail_budget_locked(job, index)
+                        continue
+                    remaining.append(index)
+                job.pending_indices = remaining
+                if admitted:
+                    job.last_activity = self.now()
+                return admitted
+
+    def withdraw_pending(self, job: Job, indices: list[int]) -> None:
+        """Drop pending indices that were accepted in a request that could not start work."""
+        drop = set(indices)
+        if not drop:
+            return
+        with self._lock:
+            with job.lock:
+                if self._jobs.get(job.job_id) is not job:
+                    return
+                kept: list[int] = []
+                for index in job.pending_indices:
+                    if index in drop:
+                        status = job.statuses.get(index, {})
+                        if status.get("status") == "queued":
+                            job.statuses.pop(index, None)
+                        continue
+                    kept.append(index)
+                job.pending_indices = kept
 
     def release_task(
         self,
@@ -289,7 +458,7 @@ class JobRegistry:
             with job.lock:
                 if self._jobs.get(job.job_id) is not job or job.lifecycle != "accepting":
                     raise JobUnavailableError("Job is already closing or unavailable")
-                if job.active_count or job.reserved_bytes or job.reserved_indices or job.active_indices:
+                if self._busy_locked(job):
                     raise JobBusyError("Cannot clear a job with queued or active work")
                 job.lifecycle = "closing"
                 return job
@@ -306,7 +475,7 @@ class JobRegistry:
             with job.lock:
                 if self._jobs.get(job.job_id) is not job or job.lifecycle != "closing":
                     raise JobUnavailableError("Job is not available for replacement")
-                if job.active_count or job.reserved_bytes or job.reserved_indices or job.active_indices:
+                if self._busy_locked(job):
                     raise JobBusyError("Cannot replace a job with queued or active work")
                 for _ in range(10):
                     job_id = secrets.token_urlsafe(32)
@@ -338,7 +507,7 @@ class JobRegistry:
             with job.lock:
                 if self._jobs.get(job.job_id) is not job or job.lifecycle != "closing":
                     return False
-                if job.active_count or job.reserved_bytes or job.reserved_indices or job.active_indices:
+                if self._busy_locked(job):
                     return False
                 self._jobs.pop(job.job_id)
                 return True
@@ -370,10 +539,7 @@ class JobRegistry:
                 with job.lock:
                     if (
                         job.lifecycle != "accepting"
-                        or job.active_count
-                        or job.reserved_bytes
-                        or job.reserved_indices
-                        or job.active_indices
+                        or self._busy_locked(job)
                         or now - job.last_activity < ttl_seconds
                     ):
                         continue
@@ -605,6 +771,54 @@ def resolve_ffmpeg(configured_path: str | None = None) -> str:
     return str(fallback)
 
 
+def _js_runtime_fallback_paths(name: str) -> list[Path]:
+    executable = f"{name}.exe" if os.name == "nt" else name
+    home = Path.home()
+    local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+    program_files = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+    candidates = [
+        local / "Microsoft" / "WinGet" / "Links" / executable,
+        home / f".{name}" / "bin" / executable,
+        local / name / "bin" / executable,
+        local / "Programs" / name / executable,
+        program_files / name.capitalize() / executable,
+    ]
+    packages = local / "Microsoft" / "WinGet" / "Packages"
+    if packages.is_dir():
+        pattern = f"DenoLand.Deno_*/{executable}" if name == "deno" else f"*{name}*/{executable}"
+        candidates.extend(sorted(packages.glob(pattern)))
+    return candidates
+
+
+def resolve_js_runtime(
+    configured_path: str | None = None,
+    configured_name: str | None = None,
+) -> tuple[str, str]:
+    name = (configured_name or os.environ.get("YTDLP_JS_RUNTIME") or "deno").strip().lower()
+    if name not in {"deno", "node"}:
+        raise RuntimeError("YTDLP_JS_RUNTIME must be deno or node")
+    override = configured_path or os.environ.get("YTDLP_JS_RUNTIME_PATH")
+    if override:
+        path = Path(override).expanduser().resolve()
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise RuntimeError("YTDLP_JS_RUNTIME_PATH must reference an executable file")
+        return name, str(path)
+    found = shutil.which(name)
+    if found:
+        return name, found
+    for candidate in _js_runtime_fallback_paths(name):
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved.is_file() and os.access(resolved, os.X_OK):
+            return name, str(resolved)
+    raise RuntimeError(
+        "No JavaScript runtime found for YouTube downloads. "
+        f"Install {name} and ensure it is on PATH, or set YTDLP_JS_RUNTIME_PATH."
+    )
+
+
 def _read_limited_response(response: requests.Response, maximum: int) -> bytes:
     length = response.headers.get("Content-Length")
     if length:
@@ -622,31 +836,346 @@ def _read_limited_response(response: requests.Response, maximum: int) -> bytes:
     return bytes(chunks)
 
 
-def fetch_cover_art(song_title: str, artist_name: str, max_bytes: int = 5_000_000) -> bytes | None:
+YOUTUBE_SEARCH_RESULTS = 15
+YOUTUBE_FALLBACK_MIN_VIEWS = 100_000
+_ITUNES_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "feat",
+    "featuring",
+    "for",
+    "ft",
+    "in",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+    "vs",
+}
+_FILLER_TOKENS = {
+    "4k",
+    "audio",
+    "dirty",
+    "explicit",
+    "hd",
+    "hq",
+    "lyric",
+    "lyrics",
+    "mix",
+    "mixed",
+    "music",
+    "official",
+    "original",
+    "prod",
+    "produced",
+    "rd",
+    "record",
+    "records",
+    "road",
+    "song",
+    "soundtrack",
+    "track",
+    "version",
+    "video",
+    "visualizer",
+}
+_FEAT_ARTIST = re.compile(r"\((?:feat|ft)\.?\s*([^)]+)\)", re.I)
+_FEAT_SUFFIX = re.compile(r"\s*\((?:feat|ft)\.?[^)]*\)", re.I)
+_VIDEO_TITLE = re.compile(
+    r"(?i)(?:\b(?:official\s+)?music\s+video\b|\bofficial\s+video\b|\blyric\s+video\b|\bvisualizer\b)",
+)
+_MOVIE_TITLE = re.compile(
+    r"(?i)(?:\bmovie\b|\bfilm\b|\bscene\b|\btrailer\b|\bfull\s+movie\b|\brap\s+battles?)",
+)
+_CLEAN_TITLE = re.compile(
+    r"(?i)(?:\bnon-?explicit\b|\bclean(?:\s+version)?\b|\bradio\s+edit\b|\bcensored\b)",
+)
+_VARIANT_TITLE = re.compile(
+    r"(?i)(?:\b8[\s\-]?d\b|\bparody\b|\bcover\b|\bkaraoke\b|\btype\s+beat\b|"
+    r"\bslowed\b|\bsped\s*up\b|\bspeed\s*up\b|\bnightcore\b|\bmashup\b|"
+    r"\breverb\b|\bbinaural\b|\bspatial\b|\binstrumental\b|\bfreestyle\b|\bremix\b|"
+    r"\bremaster(?:ed)?\b|\bpreview\b|\bsnippet\b|\bacapella\b|\bclick\b|\bmetronome\b|"
+    r"\bdrumless\b|\bno\s+drums\b|\bisolated\b|\bstems?\b|\blive\b|\b432\s*hz\b|"
+    r"\banthem\b|\bedition\b|\bworld\s+cup\b|\bloop\b|\btutorial\b)"
+)
+
+
+def significant_tokens(text: str) -> list[str]:
+    tokens = []
+    for token in re.findall(r"[a-z0-9]+", text.lower()):
+        if token in _STOPWORDS:
+            continue
+        if len(token) > 1 or token.isdigit():
+            tokens.append(token)
+    return tokens
+
+
+def youtube_core_title(title: str) -> str:
+    return _FEAT_SUFFIX.sub("", title).strip()
+
+
+def featured_tokens(text: str) -> set[str]:
+    tokens: set[str] = set()
+    for match in _FEAT_ARTIST.finditer(text):
+        tokens.update(significant_tokens(match.group(1)))
+    for match in re.finditer(r"\b(?:feat|ft)\.?\s+([^()]+?)(?=\s*[\[(]|$)", text, re.I):
+        tokens.update(significant_tokens(match.group(1)))
+    return tokens
+
+
+def allowed_match_tokens(artist: str, title: str) -> set[str]:
+    allowed = set(_FILLER_TOKENS)
+    allowed.update(significant_tokens(youtube_core_title(title)))
+    allowed.update(significant_tokens(artist.replace(",", " ")))
+    allowed.update(featured_tokens(title))
+    return allowed
+
+
+def build_youtube_search_query(artist: str, title: str) -> str:
+    primary = artist.split(",")[0].strip() or artist.strip()
+    return f'"{primary}" "{youtube_core_title(title)}" official audio'
+
+
+def _channel_has_token(token: str, channel_l: str, compact: str) -> bool:
+    if len(token) <= 2:
+        return compact.startswith(token) or re.search(rf"\b{re.escape(token)}\b", channel_l) is not None
+    return token in compact or token in channel_l
+
+
+def channel_is_trusted(channel: str, artist: str) -> bool:
+    channel_l = channel.lower()
+    compact = re.sub(r"[^a-z0-9]+", "", channel_l)
+    tokens = significant_tokens(artist.split(",")[0])
+    return bool(tokens) and all(_channel_has_token(token, channel_l, compact) for token in tokens)
+
+
+def _entry_view_count(entry: dict[str, Any]) -> int:
+    views = entry.get("view_count")
+    if isinstance(views, (int, float)) and not isinstance(views, bool) and views > 0:
+        return int(views)
+    return 0
+
+
+def undesired_youtube_source(info: dict[str, Any], *, incomplete: bool = False) -> str | None:
+    if incomplete:
+        return None
+    title = str(info.get("title") or "")
+    duration = info.get("duration")
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+        if duration < 90:
+            return "Skipping preview or snippet"
+        if duration >= 600:
+            return "Skipping unusually long source"
+    if _MOVIE_TITLE.search(title):
+        return "Skipping movie or scene source"
+    if _CLEAN_TITLE.search(title):
+        return "Skipping clean or non-explicit source"
+    if _VARIANT_TITLE.search(title):
+        return "Skipping remix, parody, or processed audio"
+    return None
+
+
+def score_youtube_candidate(entry: dict[str, Any], artist: str, title: str) -> int | None:
+    video_title = str(entry.get("title") or "")
+    channel = str(entry.get("uploader") or entry.get("channel") or "")
+    skip = undesired_youtube_source({"title": video_title, "duration": entry.get("duration")})
+    if skip:
+        return None
+    requested = title.lower()
+    if _VARIANT_TITLE.search(video_title) and not _VARIANT_TITLE.search(requested):
+        return None
+    title_tokens = significant_tokens(youtube_core_title(title))
+    if not title_tokens:
+        return None
+    video_l = video_title.lower()
+    if any(token not in video_l for token in title_tokens):
+        return None
+    requested_feat = featured_tokens(title)
+    for part in artist.split(",")[1:]:
+        requested_feat.update(significant_tokens(part))
+    video_feat = featured_tokens(video_title)
+    if requested_feat and video_feat and requested_feat.isdisjoint(video_feat):
+        return None
+    allowed = allowed_match_tokens(artist, title) | video_feat
+    extra = [token for token in significant_tokens(video_title) if token not in allowed]
+    if extra:
+        return None
+    trusted = channel_is_trusted(channel, artist)
+    artist_tokens = significant_tokens(artist.split(",")[0])
+    artist_in_title = bool(artist_tokens) and all(token in video_l for token in artist_tokens)
+    high_fallback = not trusted and artist_in_title and _entry_view_count(entry) >= YOUTUBE_FALLBACK_MIN_VIEWS
+    if not trusted and not high_fallback:
+        return None
+    visual = bool(_VIDEO_TITLE.search(video_title))
+    if visual and not trusted:
+        return None
+    score = 10 * len(title_tokens)
+    if "official audio" in video_l or re.search(r"\baudio\b", video_l):
+        score += 25
+    channel_l = channel.lower()
+    if trusted and "topic" in channel_l:
+        score += 20
+    if trusted and "vevo" in channel_l:
+        score += 15
+    if "official" in video_l:
+        score += 5
+    views = _entry_view_count(entry)
+    if views:
+        score += min(40, views.bit_length())
+    if visual:
+        score -= 40
+    if high_fallback:
+        score -= 15
+    return score
+
+
+def rank_youtube_sources(entries: list[dict[str, Any]], artist: str, title: str) -> list[dict[str, Any]]:
+    ranked = [(score_youtube_candidate(entry, artist, title), entry) for entry in entries if entry]
+    ranked = [(score, entry) for score, entry in ranked if score is not None]
+    ranked.sort(key=lambda item: (item[0], _entry_view_count(item[1])), reverse=True)
+    return [entry for _score, entry in ranked]
+
+
+def select_youtube_source(entries: list[dict[str, Any]], artist: str, title: str) -> dict[str, Any] | None:
+    ranked = rank_youtube_sources(entries, artist, title)
+    return ranked[0] if ranked else None
+
+
+def youtube_watch_url(entry: dict[str, Any]) -> str | None:
+    url = entry.get("url")
+    if isinstance(url, str) and url.startswith("http") and "youtube.com/results" not in url:
+        return url
+    video_id = youtube_video_id(str(entry.get("id") or ""))
+    if video_id is not None:
+        return f"https://www.youtube.com/watch?v={video_id}"
+    raw_id = entry.get("id")
+    if isinstance(raw_id, str) and raw_id:
+        return f"https://www.youtube.com/watch?v={raw_id}"
+    return None
+
+
+YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+PICKER_SOURCE_LIMIT = 3
+
+
+def youtube_video_id(value: str) -> str | None:
+    if isinstance(value, str) and YOUTUBE_VIDEO_ID_RE.fullmatch(value):
+        return value
+    return None
+
+
+def collect_picker_sources(entries: list[dict[str, Any]], tried_ids: set[str]) -> list[dict[str, Any]]:
+    ranked: list[tuple[int, int, dict[str, Any]]] = []
+    for order, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        video_id = youtube_video_id(str(entry.get("id") or ""))
+        if video_id is None or video_id in tried_ids:
+            continue
+        duration = entry.get("duration")
+        if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+            if duration < 90 or duration >= 600:
+                continue
+            duration_value: int | None = int(duration)
+        else:
+            duration_value = None
+        title = str(entry.get("title") or "")
+        if _MOVIE_TITLE.search(title) or _CLEAN_TITLE.search(title) or _VARIANT_TITLE.search(title):
+            continue
+        ranked.append((_entry_view_count(entry), -order, {
+            "id": video_id,
+            "title": title,
+            "channel": str(entry.get("uploader") or entry.get("channel") or ""),
+            "duration": duration_value,
+        }))
+    ranked.sort(reverse=True)
+    return [item[2] for item in ranked[:PICKER_SOURCE_LIMIT]]
+
+
+def _artwork_url_from_results(results: list[dict[str, Any]], album: str | None) -> str | None:
+    album_name = (album or "").strip().lower()
+    ranked: list[tuple[int, str]] = []
+    for result in results:
+        artwork_url = result.get("artworkUrl100")
+        if not isinstance(artwork_url, str) or urlparse(artwork_url).scheme != "https":
+            continue
+        score = 1
+        collection = str(result.get("collectionName") or "").lower()
+        if album_name and album_name in collection:
+            score += 2
+        ranked.append((score, artwork_url))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return ranked[0][1] if ranked else None
+
+
+def fetch_cover_art(
+    song_title: str,
+    artist_name: str,
+    max_bytes: int = 5_000_000,
+    album: str | None = None,
+) -> bytes | None:
     try:
+        term = " ".join(part.strip() for part in (song_title, artist_name, album or "") if part and part.strip())
         search = requests.get(
             "https://itunes.apple.com/search",
-            params={"term": f"{song_title} {artist_name}".strip(), "entity": "song", "limit": 1},
+            params={"term": term, "entity": "song", "limit": 5},
+            headers=_ITUNES_HEADERS,
             timeout=(3.05, 8),
         )
         search.raise_for_status()
-        if "application/json" not in search.headers.get("Content-Type", "").lower():
+        content_type = search.headers.get("Content-Type", "").lower()
+        if "json" not in content_type and "javascript" not in content_type:
             return None
         if len(search.content) > 1_000_000:
             return None
-        results = search.json().get("results", [])
-        artwork_url = results[0].get("artworkUrl100") if results else None
-        if not artwork_url or urlparse(artwork_url).scheme != "https":
+        artwork_url = _artwork_url_from_results(search.json().get("results", []), album)
+        if not artwork_url:
             return None
-        artwork_url = artwork_url.replace("100x100", "600x600")
-        image = requests.get(artwork_url, timeout=(3.05, 8), stream=True)
-        image.raise_for_status()
-        if not image.headers.get("Content-Type", "").lower().startswith("image/"):
-            return None
-        return _read_limited_response(image, max_bytes)
+        candidates = [artwork_url.replace("100x100", "600x600"), artwork_url]
+        for image_url in candidates:
+            image = requests.get(
+                image_url,
+                headers=_ITUNES_HEADERS,
+                timeout=(3.05, 8),
+                stream=True,
+            )
+            image.raise_for_status()
+            payload = _read_limited_response(image, max_bytes)
+            content_type = image.headers.get("Content-Type", "").lower()
+            if content_type.startswith("image/") or payload.startswith(b"\xff\xd8") or payload.startswith(b"\x89PNG"):
+                return payload
+        return None
     except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
         LOGGER.info("Cover artwork unavailable: %s", exc)
         return None
+
+
+def _sidecar_cover_bytes(filepath: Path, max_bytes: int) -> bytes | None:
+    stem = filepath.with_suffix("")
+    for suffix in (".jpg", ".jpeg", ".png"):
+        candidate = stem.with_suffix(suffix)
+        if not candidate.is_file():
+            continue
+        data = candidate.read_bytes()
+        if 0 < len(data) <= max_bytes:
+            return data
+    return None
+
+
+def load_cover_art_bytes(filepath: Path, song: dict[str, str], max_bytes: int) -> bytes | None:
+    cover = fetch_cover_art(
+        song["Song"],
+        song["Artist"].split(",")[0],
+        max_bytes,
+        song.get("Album"),
+    )
+    return cover or _sidecar_cover_bytes(filepath, max_bytes)
 
 
 def tag_mp3_file(filepath: Path, song: dict[str, str], artwork_max_bytes: int) -> None:
@@ -665,16 +1194,47 @@ def tag_mp3_file(filepath: Path, song: dict[str, str], artwork_max_bytes: int) -
         audio["genre"] = [genre.strip() for genre in song["Genres"].split(",") if genre.strip()]
     audio.save()
 
-    cover = fetch_cover_art(song["Song"], song["Artist"].split(",")[0], artwork_max_bytes)
+    cover = load_cover_art_bytes(filepath, song, artwork_max_bytes)
     if cover:
         try:
             tagged = MP3(str(filepath), ID3=ID3)
             if tagged.tags is None:
                 tagged.add_tags()
-            tagged.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover))
-            tagged.save()
+            tagged.tags.delall("APIC")
+            mime = "image/png" if cover.startswith(b"\x89PNG") else "image/jpeg"
+            tagged.tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=cover))
+            tagged.save(v2_version=3)
         except error as exc:
             LOGGER.info("Could not embed artwork: %s", exc)
+    for suffix in (".jpg", ".jpeg", ".png", ".webp"):
+        filepath.with_suffix(suffix).unlink(missing_ok=True)
+
+
+def _prepare_sidecar_jpeg(output_base: Path, ffmpeg_path: str) -> None:
+    dest = output_base.with_suffix(".jpg")
+    if dest.is_file():
+        return
+    for candidate in sorted(output_base.parent.glob(f"{output_base.name}.*")):
+        suffix = candidate.suffix.lower()
+        if suffix in {".jpg", ".jpeg"}:
+            if candidate != dest:
+                try:
+                    candidate.replace(dest)
+                except OSError:
+                    shutil.copyfile(candidate, dest)
+            return
+        if suffix not in {".webp", ".png"}:
+            continue
+        try:
+            subprocess.run(
+                [ffmpeg_path, "-y", "-i", str(candidate), str(dest)],
+                check=False,
+                capture_output=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return
+        return
 
 
 def download_song_from_youtube(
@@ -683,6 +1243,9 @@ def download_song_from_youtube(
     ffmpeg_path: str,
     progress: Callable[[float | None, str], None],
     max_source_bytes: int,
+    *,
+    artist: str = "",
+    title: str = "",
 ) -> None:
     def progress_hook(data: dict[str, Any]) -> None:
         for key in ("total_bytes", "total_bytes_estimate", "downloaded_bytes"):
@@ -700,25 +1263,61 @@ def download_song_from_youtube(
         elif status == "finished":
             progress(100.0, "Converting and tagging")
 
-    options = {
+    artist_name = artist.strip() or query.strip()
+    song_title = title.strip() or query.strip()
+    runtime_name, runtime_path = resolve_js_runtime()
+    search_url = f"ytsearch{YOUTUBE_SEARCH_RESULTS}:{build_youtube_search_query(artist_name, song_title)}"
+    shared = {
+        "quiet": True,
+        "retries": 3,
+        "socket_timeout": 30,
+        "js_runtimes": {runtime_name: {"path": runtime_path}},
+        "extractor_args": {"youtube": {"player_client": ["default", "ios", "-android_sdkless"]}},
+    }
+    with YoutubeDL({**shared, "extract_flat": True, "skip_download": True}) as explorer:
+        listing = explorer.extract_info(search_url, download=False) or {}
+    entries = [entry for entry in listing.get("entries") or [] if isinstance(entry, dict)]
+    candidates = rank_youtube_sources(entries, artist_name, song_title)
+    if not candidates:
+        raise DownloadError("No matching audio source found")
+
+    download_options = {
+        **shared,
         "format": "bestaudio/best",
         "outtmpl": f"{output_base}.%(ext)s",
         "ffmpeg_location": ffmpeg_path,
         "max_filesize": max_source_bytes,
         "progress_hooks": [progress_hook],
         "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
-        "noplaylist": True,
-        "quiet": True,
-        "retries": 3,
-        "socket_timeout": 30,
+        "match_filter": undesired_youtube_source,
+        "writethumbnail": True,
     }
-    try:
-        with YoutubeDL(options) as downloader:
-            downloader.download([f"ytsearch1:{query}"])
-    except DownloadError:
-        raise
-    if not output_base.with_suffix(".mp3").is_file():
-        raise FileNotFoundError("Download did not produce an MP3 file")
+    last_error: Exception | None = None
+    seen: set[str] = set()
+    for entry in candidates:
+        watch_url = youtube_watch_url(entry)
+        if not watch_url or watch_url in seen:
+            continue
+        seen.add(watch_url)
+        try:
+            with YoutubeDL(download_options) as downloader:
+                downloader.download([watch_url])
+        except DownloadError as exc:
+            last_error = exc
+            message = str(exc)
+            if "403" not in message and "Skipping" not in message and "No matching audio" not in message:
+                raise
+        if output_base.with_suffix(".mp3").is_file():
+            _prepare_sidecar_jpeg(output_base, ffmpeg_path)
+            return
+        for leftover in output_base.parent.glob(f"{output_base.name}.*"):
+            try:
+                leftover.unlink(missing_ok=True)
+            except OSError:
+                LOGGER.warning("Could not remove rejected source output %s", leftover.name)
+    if last_error is not None:
+        raise last_error
+    raise FileNotFoundError("Download did not produce an MP3 file")
 
 
 def job_room(job_id: str) -> str:
@@ -784,6 +1383,8 @@ def process_song(
                 ffmpeg,
                 on_progress,
                 int(app.config["MAX_SOURCE_BYTES"]),
+                artist=song["Artist"],
+                title=song["Song"],
             )
             tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
             actual_bytes = filepath.stat().st_size
@@ -810,6 +1411,62 @@ def process_song(
         publish("failed", "Download failed. You can retry this track.")
     finally:
         job_registry.release_task(job, index, reserved)
+        drain_pending(app, sio, job)
+
+
+def start_reserved_tasks(
+    app: Flask,
+    sio: SocketIO,
+    job: Job,
+    indices: list[int],
+    reservation_bytes: int,
+) -> list[int]:
+    started: list[int] = []
+    for index in indices:
+        copied_song = dict(job.songs[index])
+        try:
+            sio.start_background_task(
+                process_song,
+                app,
+                sio,
+                job.job_id,
+                index,
+                copied_song,
+                reservation_bytes,
+            )
+        except Exception:
+            LOGGER.exception("Could not start job %s track %s", job.job_id, index)
+            job_registry.release_task(job, index, reservation_bytes, "Could not start background task")
+        else:
+            started.append(index)
+    return started
+
+
+def drain_pending(app: Flask, sio: SocketIO, job: Job) -> list[int]:
+    reservation = int(app.config["TASK_BYTE_RESERVATION"])
+    with job.lock:
+        watched = list(job.pending_indices)
+    admitted = job_registry.admit_pending(
+        job,
+        int(app.config["MAX_ACTIVE_TASKS_PER_JOB"]),
+        reservation,
+        int(app.config["MAX_JOB_BYTES"]),
+        int(app.config["MAX_TOTAL_JOB_BYTES"]),
+    )
+    with job.lock:
+        failed_payloads = [
+            dict(job.statuses[index])
+            for index in watched
+            if index not in job.pending_indices
+            and index not in job.reserved_indices
+            and index in job.statuses
+        ]
+    for payload in failed_payloads:
+        try:
+            sio.emit("download_progress", payload, to=job_room(job.job_id))
+        except Exception:
+            LOGGER.exception("Could not emit pending failure for job %s", job.job_id)
+    return start_reserved_tasks(app, sio, job, admitted, reservation)
 
 
 def _csrf_token(app: Flask, job_id: str) -> str:
@@ -831,7 +1488,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         CSV_MAX_BYTES=1_000_000,
         CSV_MAX_ROWS=2_000,
         CSV_MAX_FIELD_LENGTH=500,
-        SELECTION_LIMIT=20,
+        SELECTION_LIMIT=2_000,
         GLOBAL_CONCURRENCY=2,
         MAX_ACTIVE_TASKS_PER_JOB=8,
         MAX_SOURCE_BYTES=100_000_000,
@@ -916,20 +1573,20 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         message = "Upload exceeds the maximum request size"
         if _json_request():
             return jsonify(error=message), 413
-        return render_current(message), 413
+        return render_current(message, 413)
 
     @flask_app.errorhandler(429)
     def rate_limited(_error: HTTPException) -> Any:
         message = "Too many requests. Please wait and try again."
         if _json_request():
             return jsonify(error=message), 429
-        return render_current(message), 429
+        return render_current(message, 429)
 
     @flask_app.errorhandler(404)
     def not_found(_error: HTTPException) -> Any:
         if _json_request():
             return jsonify(error="Not found"), 404
-        return render_current("The requested resource was not found"), 404
+        return render_current("The requested resource was not found", 404)
 
     @flask_app.errorhandler(JobCapacityError)
     def capacity_exhausted(error: JobCapacityError) -> Any:
@@ -1066,7 +1723,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     def queue_indices(job: Job, indices: list[int]) -> list[int]:
         reservation = int(flask_app.config["TASK_BYTE_RESERVATION"])
-        reserved = job_registry.reserve_indices(
+        reserved, queued = job_registry.enqueue_indices(
             job,
             indices,
             int(flask_app.config["MAX_ACTIVE_TASKS_PER_JOB"]),
@@ -1074,27 +1731,18 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             int(flask_app.config["MAX_JOB_BYTES"]),
             int(flask_app.config["MAX_TOTAL_JOB_BYTES"]),
         )
-        started: list[int] = []
-        for index in reserved:
-            copied_song = dict(job.songs[index])
-            try:
-                sio.start_background_task(
-                    process_song,
-                    flask_app,
-                    sio,
-                    job.job_id,
-                    index,
-                    copied_song,
-                    reservation,
-                )
-            except Exception:
-                LOGGER.exception("Could not start job %s track %s", job.job_id, index)
-                job_registry.release_task(job, index, reservation, "Could not start background task")
-            else:
-                started.append(index)
+        started = start_reserved_tasks(flask_app, sio, job, reserved, reservation)
         if reserved and not started:
+            job_registry.withdraw_pending(job, [index for index in queued if index not in reserved])
             raise JobAdmissionError("Could not start background tasks")
-        return started
+        accepted: list[int] = []
+        with job.lock:
+            pending = set(job.pending_indices)
+            reserved_set = set(job.reserved_indices)
+            for index in queued:
+                if index in reserved_set or index in pending:
+                    accepted.append(index)
+        return accepted
 
     @flask_app.route("/download", methods=["POST"])
     @limiter.limit("20 per minute")
@@ -1123,7 +1771,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return error_response
         assert job is not None
         with job.lock:
-            indices = sorted(job.failed)[: int(flask_app.config["SELECTION_LIMIT"])]
+            indices = sorted(job.failed)
         if not indices:
             return jsonify(error="There are no failed downloads to retry"), 409
         try:
