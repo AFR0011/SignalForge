@@ -180,6 +180,22 @@
     sourceOpener = null;
   };
 
+  const sourceCardButtons = () => [...(sourceCards?.querySelectorAll("button") || [])];
+
+  const disableSourceCardButtons = (activeButton) => {
+    sourceCardButtons().forEach((btn) => {
+      btn.disabled = true;
+    });
+    if (activeButton) activeButton.textContent = "Starting…";
+  };
+
+  const enableSourceCardButtons = () => {
+    sourceCardButtons().forEach((btn) => {
+      btn.disabled = false;
+      btn.textContent = "Use this source";
+    });
+  };
+
   const openSourceDialog = async (button) => {
     const row = button.closest("tr");
     const index = Number(button.dataset.index);
@@ -211,15 +227,22 @@
         use.type = "button";
         use.className = "button button-primary";
         use.textContent = "Use this source";
-        use.addEventListener("click", () => withBusyButton(use, "Starting…", async () => {
-          const result = await mutate("/choose-source", {
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ index, video_id: source.id }),
-          });
-          setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" });
-          closeSourceDialog();
-          announce(`${result.started.length} track${result.started.length === 1 ? "" : "s"} queued.`, "success");
-        }));
+        use.addEventListener("click", async () => {
+          if (use.disabled) return;
+          disableSourceCardButtons(use);
+          try {
+            const result = await mutate("/choose-source", {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ index, video_id: source.id }),
+            });
+            setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" });
+            closeSourceDialog();
+            announce(`${result.started.length} track${result.started.length === 1 ? "" : "s"} queued.`, "success");
+          } catch (error) {
+            enableSourceCardButtons();
+            announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
+          }
+        });
         card.append(image, heading, channel, use);
         sourceCards?.append(card);
       });
