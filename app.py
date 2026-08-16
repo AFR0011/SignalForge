@@ -1063,7 +1063,7 @@ def youtube_watch_url(entry: dict[str, Any]) -> str | None:
 
 
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-PICKER_SOURCE_LIMIT = 3
+PICKER_SOURCE_LIMIT = 9
 SOURCE_THUMB_MAX_BYTES = 200_000
 YOUTUBE_THUMB_HOST = "i.ytimg.com"
 

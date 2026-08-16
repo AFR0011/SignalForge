@@ -722,7 +722,7 @@ def test_collect_picker_sources_keeps_label_hits_and_drops_tried_or_junk():
     ]
     picked = application.collect_picker_sources(entries, {"triedtried1"})
     ids = [item["id"] for item in picked]
-    assert ids == ["labellabel1", "soundtracks", "lyriclyric1"]
+    assert ids == ["labellabel1", "soundtracks", "lyriclyric1", "noduration1"]
     assert picked[0] == {
         "id": "labellabel1",
         "title": "Starling - Halo (Official Audio)",
@@ -731,6 +731,42 @@ def test_collect_picker_sources_keeps_label_hits_and_drops_tried_or_junk():
     }
     assert application.youtube_video_id("bad") is None
     assert application.youtube_video_id("labellabel1") == "labellabel1"
+
+
+def test_collect_picker_sources_caps_at_nine():
+    entries = [
+        {
+            "id": f"pick{i:07d}",
+            "title": "Halo",
+            "uploader": "Starling",
+            "duration": 200,
+            "view_count": 1000 - i,
+        }
+        for i in range(10)
+    ]
+    picked = application.collect_picker_sources(entries, set())
+    assert application.PICKER_SOURCE_LIMIT == 9
+    assert [item["id"] for item in picked] == [f"pick{i:07d}" for i in range(9)]
+
+
+def test_sources_route_returns_all_stored_leftovers(app, client):
+    upload_csv(app, client)
+    job = current_job(client)
+    job.failed.add(0)
+    job.statuses[0] = {
+        "job_id": job.job_id,
+        "index": 0,
+        "status": "failed",
+        "message": "failed",
+        "can_choose_source": True,
+    }
+    job.source_choices[0] = [
+        {"id": f"pick{i:07d}", "title": "Halo", "channel": "Starling", "duration": 200}
+        for i in range(9)
+    ]
+    listed = client.get("/tracks/0/sources")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json["sources"]] == [f"pick{i:07d}" for i in range(9)]
 
 
 def test_download_watch_url_skips_search_and_uses_that_url(tmp_path, monkeypatch):
