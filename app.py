@@ -60,6 +60,7 @@ SECRET_PLACEHOLDERS = {
     "secret",
     "your-secret-key",
 }
+WINDOWS_UNSAFE_FILENAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 
 @dataclass
@@ -758,6 +759,74 @@ def format_title(raw_title: str) -> str:
         title = re.sub(r"\s*(sped up|speed up|speedup|speed-up)[^)]*$", "", title, flags=re.I).strip() + " (Sped Up)"
     title = title.lower().title()
     return re.sub(r"('(S|T))\b", lambda match: match.group(1).lower(), title)
+
+
+class LibraryWriteError(RuntimeError):
+    pass
+
+
+def library_filename_stem(raw_title: str) -> str:
+    sanitized = WINDOWS_UNSAFE_FILENAME.sub("", raw_title)
+    titled = format_title(sanitized)
+    cleaned = re.sub(r"\s+", " ", titled).strip(" .")
+    return (cleaned[:96].rstrip(" .") or "Track")
+
+
+def default_library_root() -> Path:
+    return Path.home() / "Music" / "SignalForge"
+
+
+def ensure_library_root(root: Path) -> Path:
+    resolved = root.expanduser().resolve()
+    try:
+        resolved.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as exc:
+        raise LibraryWriteError("Could not create the library folder") from exc
+    if not resolved.is_dir() or not os.access(resolved, os.W_OK):
+        raise LibraryWriteError("Library folder is not writable")
+    return resolved
+
+
+def safe_library_path(root: Path, filename: str) -> Path:
+    if not filename or filename != Path(filename).name:
+        raise ValueError("Invalid filename")
+    resolved_root = root.resolve()
+    path = (resolved_root / filename).resolve()
+    if path.parent != resolved_root:
+        raise ValueError("Artifact is outside the library root")
+    return path
+
+
+_library_name_lock = threading.Lock()
+
+
+def save_mp3_to_library(source: Path, root: Path, stem: str) -> str:
+    if not source.is_file():
+        raise LibraryWriteError("Downloaded file is missing")
+    resolved_root = ensure_library_root(root)
+    with _library_name_lock:
+        destination = _allocate_library_path_locked(resolved_root, stem)
+        try:
+            os.replace(source, destination)
+        except OSError:
+            try:
+                shutil.copy2(source, destination)
+                source.unlink()
+            except OSError as exc:
+                raise LibraryWriteError("Could not save the file to the library folder") from exc
+        return destination.name
+
+
+def _allocate_library_path_locked(root: Path, stem: str) -> Path:
+    candidate = safe_library_path(root, f"{stem}.mp3")
+    if not candidate.exists() or candidate.stat().st_size == 0:
+        return candidate
+    suffix = 2
+    while True:
+        candidate = safe_library_path(root, f"{stem} ({suffix}).mp3")
+        if not candidate.exists() or candidate.stat().st_size == 0:
+            return candidate
+        suffix += 1
 
 
 def resolve_ffmpeg(configured_path: str | None = None) -> str:

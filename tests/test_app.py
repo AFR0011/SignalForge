@@ -32,6 +32,39 @@ def test_production_accepts_strong_secret_and_development_generates_one(tmp_path
     assert application.is_strong_secret(dev.config["SECRET_KEY"])
 
 
+def test_library_filename_stem_is_title_case_song_only():
+    assert application.library_filename_stem("halo (feat. drowsy)") == "Halo"
+    assert application.library_filename_stem("it's time") == "It's Time"
+    assert application.library_filename_stem('a/b:c*d?e"f<g>h|i') == "Abcdefghi"
+    assert application.library_filename_stem("   ") == "Track"
+
+
+def test_save_mp3_to_library_suffixes_and_replaces_empty_only(tmp_path):
+    root = tmp_path / "library"
+    root.mkdir()
+    first = tmp_path / "one.mp3"
+    first.write_bytes(b"one")
+    assert application.save_mp3_to_library(first, root, "Halo") == "Halo.mp3"
+    assert (root / "Halo.mp3").read_bytes() == b"one"
+    second = tmp_path / "two.mp3"
+    second.write_bytes(b"two")
+    assert application.save_mp3_to_library(second, root, "Halo") == "Halo (2).mp3"
+    assert (root / "Halo.mp3").read_bytes() == b"one"
+    empty = root / "Halo (2).mp3"
+    empty.write_bytes(b"")
+    third = tmp_path / "three.mp3"
+    third.write_bytes(b"three")
+    assert application.save_mp3_to_library(third, root, "Halo") == "Halo (2).mp3"
+    assert (root / "Halo (2).mp3").read_bytes() == b"three"
+
+
+def test_safe_library_path_rejects_escape(tmp_path):
+    root = tmp_path / "library"
+    root.mkdir()
+    with pytest.raises(ValueError):
+        application.safe_library_path(root, "../outside.mp3")
+
+
 def test_valid_upload_renders_and_cookie_session_contains_only_job_id(app, client):
     response = upload_csv(app, client)
     assert response.status_code == 200

@@ -20,6 +20,7 @@ def app(tmp_path):
             "SECRET_KEY": "test-secret-that-is-longer-than-thirty-two-characters",
             "PRODUCTION": False,
             "DATA_ROOT": str(tmp_path / "jobs"),
+            "LIBRARY_ROOT": str(tmp_path / "library"),
             "RATELIMIT_ENABLED": False,
             "CSV_MAX_BYTES": 512,
             "CSV_MAX_ROWS": 3,
