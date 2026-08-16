@@ -8,7 +8,7 @@
   <title>Signal Forge — CSV audio workspace</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body data-job-id="{{ job.job_id }}" data-selection-limit="{{ selection_limit }}">
+<body data-job-id="{{ job.job_id }}" data-selection-limit="{{ selection_limit }}" data-write-through="{{ 'true' if write_through else 'false' }}" data-library-ready="{{ 'true' if library_ready else 'false' }}">
   <a class="skip-link" href="#workspace">Skip to workspace</a>
 
   <header class="site-header">
@@ -76,7 +76,7 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
         <dl class="metrics">
           <div><dt>Total tracks</dt><dd id="metric-total">{{ songs|length }}</dd></div>
           <div><dt>Selected</dt><dd id="metric-selected">0</dd></div>
-          <div><dt>Ready</dt><dd id="metric-ready">{{ job.files|length }}</dd></div>
+          <div><dt>Saved</dt><dd id="metric-saved">{{ saved_count }}</dd></div>
           <div><dt>Needs retry</dt><dd id="metric-failed">{{ job.failed|length }}</dd></div>
         </dl>
         <div class="overall-progress">
@@ -84,6 +84,21 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
           <progress id="overall-progress" value="0" max="100">0%</progress>
         </div>
         <p class="job-label">Job <code>{{ job.job_id[:8] }}</code></p>
+        {% if write_through %}
+        <div class="library-destination-block">
+          <p id="library-destination">Saving to Music\SignalForge</p>
+          <p class="library-path">{{ library_root }}</p>
+          <p id="library-destination-error" class="message message-error" role="alert" {% if library_ready %}hidden{% endif %}>{{ library_error or "Could not use this library folder" }}</p>
+          {% if not library_ready %}
+          <button class="button button-quiet" id="change-folder" type="button">Change folder</button>
+          {% endif %}
+          <form id="library-fallback" {% if library_ready %}hidden{% endif %}>
+            <label for="library-path-input">Library folder</label>
+            <input id="library-path-input" name="path" type="text" autocomplete="off" required>
+            <button class="button button-quiet" type="submit">Use this folder</button>
+          </form>
+        </div>
+        {% endif %}
       </aside>
 
       <section class="panel queue-panel" aria-labelledby="queue-title">
@@ -97,9 +112,9 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
 
         <div class="toolbar" aria-label="Queue controls">
           <button class="button button-quiet" id="select-all" type="button">Select all</button>
-          <button class="button button-primary" id="download-selected" type="button">Start selected</button>
-          <button class="button button-quiet" id="retry-failed" type="button">Retry failed</button>
-          <button class="button button-quiet" id="download-zip" type="button" {% if not job.files %}hidden{% endif %}>Download ZIP</button>
+          <button class="button button-primary" id="download-selected" type="button"{% if write_through and not library_ready %} disabled{% endif %}>Start selected</button>
+          <button class="button button-quiet" id="retry-failed" type="button"{% if write_through and not library_ready %} disabled{% endif %}>Retry failed</button>
+          <button class="button button-quiet" id="download-zip" type="button" {% if write_through or not job.files %}hidden{% endif %}>Download ZIP</button>
           <button class="button button-danger" id="clear-job" type="button">Clear job</button>
         </div>
 

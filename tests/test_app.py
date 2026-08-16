@@ -80,6 +80,58 @@ def test_library_root_route_sets_writable_fallback(app, client, tmp_path):
     assert app.config["LIBRARY_ROOT"] == str(fallback.resolve())
 
 
+def test_render_local_workspace_shows_saved_destination_and_hides_zip(app, client):
+    upload_csv(app, client)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert b'id="metric-saved"' in page.data
+    assert b"Music\\SignalForge" in page.data or b"Music/SignalForge" in page.data
+    assert b'id="download-zip"' in page.data
+    assert b"hidden" in page.data
+    assert b'data-write-through="true"' in page.data
+    assert b'data-library-ready="true"' in page.data
+    assert b"Change folder" not in page.data
+
+
+def test_render_unusable_library_shows_fallback_and_disables_start(app, client, tmp_path):
+    upload_csv(app, client)
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    app.config["LIBRARY_ROOT"] = str(blocker)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert b'data-library-ready="false"' in page.data
+    assert b'id="library-destination"' in page.data
+    assert b"Change folder" in page.data
+    assert b'id="library-fallback"' in page.data
+    assert b'id="download-selected" type="button" disabled' in page.data
+    assert b'id="retry-failed" type="button" disabled' in page.data
+
+
+def test_download_and_retry_reject_unusable_library(app, client, tmp_path, monkeypatch):
+    upload_csv(app, client)
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    app.config["LIBRARY_ROOT"] = str(blocker)
+    started = []
+    monkeypatch.setattr(
+        app.extensions["socketio_instance"], "start_background_task", lambda *args: started.append(args)
+    )
+    token = csrf_for(app, client)
+    download = client.post(
+        "/download", json={"selected": [0]}, headers={"X-CSRFToken": token}
+    )
+    assert download.status_code == 409
+    assert "library folder" in download.json["error"].lower()
+    assert started == []
+    job = current_job(client)
+    job.failed.add(0)
+    retry = client.post("/retry-failed", json={}, headers={"X-CSRFToken": token})
+    assert retry.status_code == 409
+    assert "library folder" in retry.json["error"].lower()
+    assert started == []
+
+
 def test_library_root_route_rejected_in_production(tmp_path):
     prod = application.create_app(
         {

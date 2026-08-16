@@ -1842,9 +1842,23 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "retained_bytes": job.retained_bytes,
             }
 
+    def probe_library_root() -> tuple[bool, str | None]:
+        if not flask_app.config["WRITE_THROUGH"]:
+            return True, None
+        try:
+            ensure_library_root(Path(flask_app.config["LIBRARY_ROOT"]))
+        except LibraryWriteError as exc:
+            return False, str(exc)
+        return True, None
+
     def render_current(error_message: str | None = None, status: int = 200) -> Any:
         job = ensure_current_job()
         view = job_view(job)
+        library_ready, library_error = probe_library_root()
+        saved_count = sum(
+            1 for state in view["statuses"].values()
+            if isinstance(state, dict) and state.get("status") == "success"
+        )
         return render_template(
             "index.html",
             songs=view["songs"],
@@ -1855,7 +1869,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             csv_max_bytes=flask_app.config["CSV_MAX_BYTES"],
             write_through=flask_app.config["WRITE_THROUGH"],
             library_root=flask_app.config["LIBRARY_ROOT"],
-            library_ready=True,
+            library_ready=library_ready,
+            library_error=library_error,
+            saved_count=saved_count,
             error_message=error_message,
         ), status
 
@@ -2031,6 +2047,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if error_response:
             return error_response
         assert job is not None
+        library_ready, library_error = probe_library_root()
+        if not library_ready:
+            return jsonify(error=library_error or "Could not use this library folder"), 409
         try:
             indices = validate_selection(
                 selected_from_request(), len(job.songs), int(flask_app.config["SELECTION_LIMIT"])
@@ -2050,6 +2069,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if error_response:
             return error_response
         assert job is not None
+        library_ready, library_error = probe_library_root()
+        if not library_ready:
+            return jsonify(error=library_error or "Could not use this library folder"), 409
         with job.lock:
             indices = sorted(job.failed)
         if not indices:
