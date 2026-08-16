@@ -80,6 +80,26 @@ def test_library_root_route_sets_writable_fallback(app, client, tmp_path):
     assert app.config["LIBRARY_ROOT"] == str(fallback.resolve())
 
 
+def test_create_app_without_library_root_does_not_create_real_music(tmp_path):
+    real = Path.home() / "Music" / "SignalForge"
+    existed_before = real.exists()
+    flask_app = application.create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret-that-is-longer-than-thirty-two-characters",
+            "PRODUCTION": False,
+            "DATA_ROOT": str(tmp_path / "jobs"),
+            "RATELIMIT_ENABLED": False,
+        }
+    )
+    assert Path(flask_app.config["LIBRARY_ROOT"]) == tmp_path / "default-library"
+    response = flask_app.test_client().get("/")
+    assert response.status_code == 200
+    assert not (tmp_path / "default-library").exists()
+    if not existed_before:
+        assert not real.exists()
+
+
 def test_render_local_workspace_shows_saved_destination_and_hides_zip(app, client):
     upload_csv(app, client)
     page = client.get("/")
@@ -517,8 +537,13 @@ def test_process_song_library_move_failure_keeps_job_file(app, client, monkeypat
     application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
     assert job.statuses[0]["status"] == "failed"
     assert "library folder" in job.statuses[0]["message"]
-    assert list(job.directory.glob("*.mp3"))
-    assert job.files == {}
+    assert job.statuses[0].get("can_choose_source") is False
+    mp3s = list(job.directory.glob("*.mp3"))
+    assert mp3s
+    assert any(name.endswith(".mp3") for name in job.files.values())
+    download_url = job.statuses[0]["download_url"]
+    response = client.get(download_url)
+    assert response.status_code == 200
 
 
 def test_choose_source_routes_require_failed_stored_id(app, client, monkeypatch):

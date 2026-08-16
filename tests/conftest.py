@@ -12,6 +12,13 @@ def clear_registry():
     application.job_registry.clear()
 
 
+@pytest.fixture(autouse=True)
+def isolate_default_library_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        application, "default_library_root", lambda: tmp_path / "default-library"
+    )
+
+
 @pytest.fixture
 def app(tmp_path):
     return application.create_app(

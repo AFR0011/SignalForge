@@ -776,6 +776,19 @@ def default_library_root() -> Path:
     return Path.home() / "Music" / "SignalForge"
 
 
+def library_root_ready(root: Path) -> bool:
+    try:
+        resolved = root.expanduser().resolve()
+    except (OSError, RuntimeError):
+        return False
+    if resolved.exists():
+        return resolved.is_dir() and os.access(resolved, os.W_OK)
+    for ancestor in resolved.parents:
+        if ancestor.exists():
+            return ancestor.is_dir() and os.access(ancestor, os.W_OK)
+    return False
+
+
 def ensure_library_root(root: Path) -> Path:
     resolved = root.expanduser().resolve()
     try:
@@ -1567,9 +1580,26 @@ def process_song(
         keep_outputs = isinstance(exc, LibraryWriteError)
         if not retained and not keep_outputs:
             _remove_task_outputs(output_base)
+        download_url = None
+        if keep_outputs and output_base is not None:
+            artifact = output_base.with_suffix(".mp3")
+            if artifact.is_file():
+                retained = job_registry.retain_artifact(
+                    job,
+                    index,
+                    artifact.name,
+                    artifact.stat().st_size,
+                    int(app.config["MAX_JOB_BYTES"]),
+                    int(app.config["MAX_TOTAL_JOB_BYTES"]),
+                )
+                if retained:
+                    download_url = f"/jobs/{job_id}/files/{quote(artifact.name)}"
         with job.lock:
             job.failed.add(index)
-            if forced_id:
+            if keep_outputs:
+                job.source_choices.pop(index, None)
+                can_choose = False
+            elif forced_id:
                 if "403" in str(exc):
                     remaining = [
                         item for item in job.source_choices.get(index, [])
@@ -1579,11 +1609,13 @@ def process_song(
                         job.source_choices[index] = remaining
                     else:
                         job.source_choices.pop(index, None)
+                can_choose = bool(job.source_choices.get(index))
             elif picker_out:
                 job.source_choices[index] = list(picker_out)
+                can_choose = bool(job.source_choices.get(index))
             else:
                 job.source_choices.pop(index, None)
-            can_choose = bool(job.source_choices.get(index))
+                can_choose = False
         if keep_outputs:
             message = str(exc) or "Could not save the file to the library folder."
         elif can_choose:
@@ -1592,7 +1624,10 @@ def process_song(
             message = "Download failed. No alternate sources found."
         else:
             message = "Download failed. You can retry this track."
-        publish("failed", message, can_choose_source=can_choose)
+        extra: dict[str, Any] = {"can_choose_source": can_choose}
+        if download_url:
+            extra["download_url"] = download_url
+        publish("failed", message, **extra)
     finally:
         job_registry.release_task(job, index, reserved)
         drain_pending(app, sio, job)
@@ -1845,11 +1880,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def probe_library_root() -> tuple[bool, str | None]:
         if not flask_app.config["WRITE_THROUGH"]:
             return True, None
-        try:
-            ensure_library_root(Path(flask_app.config["LIBRARY_ROOT"]))
-        except LibraryWriteError as exc:
-            return False, str(exc)
-        return True, None
+        if library_root_ready(Path(flask_app.config["LIBRARY_ROOT"])):
+            return True, None
+        return False, "Could not use this library folder"
 
     def render_current(error_message: str | None = None, status: int = 200) -> Any:
         job = ensure_current_job()
