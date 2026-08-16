@@ -143,7 +143,7 @@
       if (hasProgress) progress.value = Number(data.progress);
     }
     if (link) {
-      if (data.status === "success" && data.download_url) {
+      if (data.download_url) {
         link.href = data.download_url;
         link.hidden = false;
       } else if (data.status !== "success") {
