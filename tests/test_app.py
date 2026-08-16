@@ -65,6 +65,43 @@ def test_safe_library_path_rejects_escape(tmp_path):
         application.safe_library_path(root, "../outside.mp3")
 
 
+def test_library_root_route_sets_writable_fallback(app, client, tmp_path):
+    upload_csv(app, client)
+    token = csrf_for(app, client)
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    app.config["LIBRARY_ROOT"] = str(blocker)
+    no_csrf = client.post("/library-root", json={"path": str(tmp_path / "ok")})
+    assert no_csrf.status_code == 400
+    fallback = tmp_path / "ok"
+    ok = client.post("/library-root", json={"path": str(fallback)}, headers={"X-CSRFToken": token})
+    assert ok.status_code == 200
+    assert Path(ok.json["library_root"]) == fallback.resolve()
+    assert app.config["LIBRARY_ROOT"] == str(fallback.resolve())
+
+
+def test_library_root_route_rejected_in_production(tmp_path):
+    prod = application.create_app(
+        {
+            "TESTING": True,
+            "PRODUCTION": True,
+            "SECRET_KEY": "a-valid-production-secret-with-more-than-32-characters",
+            "DATA_ROOT": str(tmp_path / "jobs"),
+            "LIBRARY_ROOT": str(tmp_path / "library"),
+            "RATELIMIT_ENABLED": False,
+        }
+    )
+    client = prod.test_client()
+    upload_csv(prod, client)
+    token = csrf_for(prod, client)
+    response = client.post(
+        "/library-root",
+        json={"path": str(tmp_path / "other")},
+        headers={"X-CSRFToken": token},
+    )
+    assert response.status_code == 409
+
+
 def test_valid_upload_renders_and_cookie_session_contains_only_job_id(app, client):
     response = upload_csv(app, client)
     assert response.status_code == 200

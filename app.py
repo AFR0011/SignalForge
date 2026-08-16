@@ -1663,6 +1663,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         JOB_TTL_SECONDS=3_600,
         ZIP_MAX_BYTES=250_000_000,
         ARTWORK_MAX_BYTES=5_000_000,
+        LIBRARY_ROOT=None,
+        WRITE_THROUGH=None,
         RATELIMIT_ENABLED=True,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -1686,6 +1688,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         raise ValueError("JOB_TTL_SECONDS must be positive")
     _configure_secret(flask_app, test_config)
     flask_app.config["SESSION_COOKIE_SECURE"] = bool(flask_app.config["PRODUCTION"])
+    if flask_app.config["WRITE_THROUGH"] is None:
+        flask_app.config["WRITE_THROUGH"] = not bool(flask_app.config["PRODUCTION"])
+    if not flask_app.config.get("LIBRARY_ROOT"):
+        flask_app.config["LIBRARY_ROOT"] = str(default_library_root())
     data_root = Path(flask_app.config["DATA_ROOT"]).expanduser().resolve()
     data_root.mkdir(parents=True, exist_ok=True)
     flask_app.config["DATA_ROOT"] = str(data_root)
@@ -1826,6 +1832,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             selection_limit=flask_app.config["SELECTION_LIMIT"],
             csv_max_rows=flask_app.config["CSV_MAX_ROWS"],
             csv_max_bytes=flask_app.config["CSV_MAX_BYTES"],
+            write_through=flask_app.config["WRITE_THROUGH"],
+            library_root=flask_app.config["LIBRARY_ROOT"],
+            library_ready=True,
             error_message=error_message,
         ), status
 
@@ -1974,6 +1983,25 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if not image:
             return jsonify(error="File not found"), 404
         return flask_app.response_class(image, mimetype="image/jpeg")
+
+    @flask_app.route("/library-root", methods=["POST"])
+    @limiter.limit("20 per minute")
+    def set_library_root() -> Any:
+        job, error_response = mutation_job()
+        if error_response:
+            return error_response
+        if not flask_app.config["WRITE_THROUGH"]:
+            return jsonify(error="Library folder can only be changed on a local run"), 409
+        payload = request.get_json(silent=True) or {}
+        raw = payload.get("path")
+        if not isinstance(raw, str) or not raw.strip():
+            return jsonify(error="Choose a library folder"), 400
+        try:
+            resolved = ensure_library_root(Path(raw.strip()))
+        except LibraryWriteError as exc:
+            return jsonify(error=str(exc)), 409
+        flask_app.config["LIBRARY_ROOT"] = str(resolved)
+        return jsonify(library_root=str(resolved))
 
     @flask_app.route("/download", methods=["POST"])
     @limiter.limit("20 per minute")
