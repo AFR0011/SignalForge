@@ -32,6 +32,148 @@ def test_production_accepts_strong_secret_and_development_generates_one(tmp_path
     assert application.is_strong_secret(dev.config["SECRET_KEY"])
 
 
+def test_library_filename_stem_is_title_case_song_only():
+    assert application.library_filename_stem("halo (feat. drowsy)") == "Halo"
+    assert application.library_filename_stem("it's time") == "It's Time"
+    assert application.library_filename_stem('a/b:c*d?e"f<g>h|i') == "Abcdefghi"
+    assert application.library_filename_stem("   ") == "Track"
+
+
+def test_save_mp3_to_library_suffixes_and_replaces_empty_only(tmp_path):
+    root = tmp_path / "library"
+    root.mkdir()
+    first = tmp_path / "one.mp3"
+    first.write_bytes(b"one")
+    assert application.save_mp3_to_library(first, root, "Halo") == "Halo.mp3"
+    assert (root / "Halo.mp3").read_bytes() == b"one"
+    second = tmp_path / "two.mp3"
+    second.write_bytes(b"two")
+    assert application.save_mp3_to_library(second, root, "Halo") == "Halo (2).mp3"
+    assert (root / "Halo.mp3").read_bytes() == b"one"
+    empty = root / "Halo (2).mp3"
+    empty.write_bytes(b"")
+    third = tmp_path / "three.mp3"
+    third.write_bytes(b"three")
+    assert application.save_mp3_to_library(third, root, "Halo") == "Halo (2).mp3"
+    assert (root / "Halo (2).mp3").read_bytes() == b"three"
+
+
+def test_safe_library_path_rejects_escape(tmp_path):
+    root = tmp_path / "library"
+    root.mkdir()
+    with pytest.raises(ValueError):
+        application.safe_library_path(root, "../outside.mp3")
+
+
+def test_library_root_route_sets_writable_fallback(app, client, tmp_path):
+    upload_csv(app, client)
+    token = csrf_for(app, client)
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    app.config["LIBRARY_ROOT"] = str(blocker)
+    no_csrf = client.post("/library-root", json={"path": str(tmp_path / "ok")})
+    assert no_csrf.status_code == 400
+    fallback = tmp_path / "ok"
+    ok = client.post("/library-root", json={"path": str(fallback)}, headers={"X-CSRFToken": token})
+    assert ok.status_code == 200
+    assert Path(ok.json["library_root"]) == fallback.resolve()
+    assert app.config["LIBRARY_ROOT"] == str(fallback.resolve())
+
+
+def test_create_app_without_library_root_does_not_create_real_music(tmp_path):
+    real = Path.home() / "Music" / "SignalForge"
+    existed_before = real.exists()
+    flask_app = application.create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret-that-is-longer-than-thirty-two-characters",
+            "PRODUCTION": False,
+            "DATA_ROOT": str(tmp_path / "jobs"),
+            "RATELIMIT_ENABLED": False,
+        }
+    )
+    assert Path(flask_app.config["LIBRARY_ROOT"]) == tmp_path / "default-library"
+    response = flask_app.test_client().get("/")
+    assert response.status_code == 200
+    assert not (tmp_path / "default-library").exists()
+    if not existed_before:
+        assert not real.exists()
+
+
+def test_render_local_workspace_shows_saved_destination_and_hides_zip(app, client):
+    upload_csv(app, client)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert b'id="metric-saved"' in page.data
+    assert b"Music\\SignalForge" in page.data or b"Music/SignalForge" in page.data
+    assert b'id="download-zip"' in page.data
+    assert b"hidden" in page.data
+    assert b'data-write-through="true"' in page.data
+    assert b'data-library-ready="true"' in page.data
+    assert b"Change folder" not in page.data
+
+
+def test_render_unusable_library_shows_fallback_and_disables_start(app, client, tmp_path):
+    upload_csv(app, client)
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    app.config["LIBRARY_ROOT"] = str(blocker)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert b'data-library-ready="false"' in page.data
+    assert b'id="library-destination"' in page.data
+    assert b"Change folder" in page.data
+    assert b'id="library-fallback"' in page.data
+    assert b'id="download-selected" type="button" disabled' in page.data
+    assert b'id="retry-failed" type="button" disabled' in page.data
+
+
+def test_download_and_retry_reject_unusable_library(app, client, tmp_path, monkeypatch):
+    upload_csv(app, client)
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    app.config["LIBRARY_ROOT"] = str(blocker)
+    started = []
+    monkeypatch.setattr(
+        app.extensions["socketio_instance"], "start_background_task", lambda *args: started.append(args)
+    )
+    token = csrf_for(app, client)
+    download = client.post(
+        "/download", json={"selected": [0]}, headers={"X-CSRFToken": token}
+    )
+    assert download.status_code == 409
+    assert "library folder" in download.json["error"].lower()
+    assert started == []
+    job = current_job(client)
+    job.failed.add(0)
+    retry = client.post("/retry-failed", json={}, headers={"X-CSRFToken": token})
+    assert retry.status_code == 409
+    assert "library folder" in retry.json["error"].lower()
+    assert started == []
+
+
+def test_library_root_route_rejected_in_production(tmp_path):
+    prod = application.create_app(
+        {
+            "TESTING": True,
+            "PRODUCTION": True,
+            "SECRET_KEY": "a-valid-production-secret-with-more-than-32-characters",
+            "DATA_ROOT": str(tmp_path / "jobs"),
+            "LIBRARY_ROOT": str(tmp_path / "library"),
+            "RATELIMIT_ENABLED": False,
+        }
+    )
+    client = prod.test_client()
+    upload_csv(prod, client)
+    token = csrf_for(prod, client)
+    response = client.post(
+        "/library-root",
+        json={"path": str(tmp_path / "other")},
+        headers={"X-CSRFToken": token},
+    )
+    assert response.status_code == 409
+
+
 def test_valid_upload_renders_and_cookie_session_contains_only_job_id(app, client):
     response = upload_csv(app, client)
     assert response.status_code == 200
@@ -180,10 +322,12 @@ def test_worker_runs_without_request_session_and_targets_only_job_room(app, clie
     application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), reservation)
     assert job.active_count == 0
     assert job.reserved_bytes == 0
-    assert job.retained_bytes == 5
-    assert job.files[0].endswith(".mp3")
+    assert job.retained_bytes == 0
+    assert job.files == {}
     assert all(item[2]["to"] == application.job_room(job.job_id) for item in emitted)
-    assert emitted[-1][1]["download_url"].startswith(f"/jobs/{job.job_id}/files/")
+    assert emitted[-1][1]["message"] == "Saved"
+    assert emitted[-1][1]["library_filename"] == "Halo.mp3"
+    assert "download_url" not in emitted[-1][1]
 
 
 def test_process_song_stores_picker_sources_and_can_choose_flag(app, client, monkeypatch):
@@ -289,6 +433,117 @@ def test_process_song_forced_watch_url_non_403_keeps_picker_id(app, client, monk
     assert [item["id"] for item in job.source_choices[0]] == ["labellabel1", "lyriclyric1"]
     assert job.statuses[0]["can_choose_source"] is True
     assert "choose a source" in job.statuses[0]["message"]
+
+
+def test_process_song_write_through_saves_title_case_and_skips_retain(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+
+    def write_mp3(_query, output_base, _ffmpeg, _progress, _max_source, **_kwargs):
+        output_base.with_suffix(".mp3").write_bytes(b"audio")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", write_mp3)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    library = Path(app.config["LIBRARY_ROOT"])
+    assert (library / "Halo.mp3").read_bytes() == b"audio"
+    assert job.files == {}
+    assert job.retained_bytes == 0
+    assert job.statuses[0]["status"] == "success"
+    assert job.statuses[0]["message"] == "Saved"
+    assert job.statuses[0]["library_filename"] == "Halo.mp3"
+    assert "download_url" not in job.statuses[0]
+
+
+def test_process_song_write_through_off_in_production_retains_job_file(tmp_path, monkeypatch):
+    prod = application.create_app(
+        {
+            "TESTING": True,
+            "PRODUCTION": True,
+            "SECRET_KEY": "a-valid-production-secret-with-more-than-32-characters",
+            "DATA_ROOT": str(tmp_path / "jobs"),
+            "LIBRARY_ROOT": str(tmp_path / "library"),
+            "RATELIMIT_ENABLED": False,
+            "TASK_BYTE_RESERVATION": 10,
+            "MAX_JOB_BYTES": 100,
+        }
+    )
+    client = prod.test_client()
+    upload_csv(prod, client)
+    job = current_job(client)
+    sio = prod.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        application,
+        "download_song_from_youtube",
+        lambda _q, output_base, *_a, **_k: output_base.with_suffix(".mp3").write_bytes(b"audio"),
+    )
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(prod, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert job.files[0].endswith(".mp3")
+    assert job.retained_bytes > 0
+    assert "download_url" in job.statuses[0]
+    assert not (Path(prod.config["LIBRARY_ROOT"]) / "Halo.mp3").exists()
+
+
+def test_process_song_retries_library_move_without_search(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    filename = application.deterministic_filename(0, job.songs[0])
+    existing = job.directory / filename
+    existing.write_bytes(b"already")
+    calls = {"download": 0}
+
+    def boom(*_args, **_kwargs):
+        calls["download"] += 1
+        raise AssertionError("search should not run")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", boom)
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: (_ for _ in ()).throw(AssertionError("tag")))
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert calls["download"] == 0
+    assert (Path(app.config["LIBRARY_ROOT"]) / "Halo.mp3").read_bytes() == b"already"
+    assert job.statuses[0]["message"] == "Saved"
+
+
+def test_process_song_library_move_failure_keeps_job_file(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        application,
+        "download_song_from_youtube",
+        lambda _q, output_base, *_a, **_k: output_base.with_suffix(".mp3").write_bytes(b"audio"),
+    )
+    monkeypatch.setattr(
+        application,
+        "save_mp3_to_library",
+        lambda *args, **kwargs: (_ for _ in ()).throw(application.LibraryWriteError("Could not save the file to the library folder")),
+    )
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert job.statuses[0]["status"] == "failed"
+    assert "library folder" in job.statuses[0]["message"]
+    assert job.statuses[0].get("can_choose_source") is False
+    mp3s = list(job.directory.glob("*.mp3"))
+    assert mp3s
+    assert any(name.endswith(".mp3") for name in job.files.values())
+    download_url = job.statuses[0]["download_url"]
+    response = client.get(download_url)
+    assert response.status_code == 200
 
 
 def test_choose_source_routes_require_failed_stored_id(app, client, monkeypatch):
@@ -1031,7 +1286,7 @@ def test_task_ceiling_starts_prefix_and_queues_remainder(app, client, monkeypatc
 
 def test_pending_queue_drains_after_task_release(app, client, monkeypatch):
     upload_csv(app, client, "Song,Artist\nA,B\nC,D\n")
-    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=100)
+    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=100, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     later_starts = []
@@ -1105,7 +1360,7 @@ def test_full_imported_list_can_be_selected_and_queued(tmp_path, monkeypatch):
 
 def test_never_fitting_pending_fails_closed_on_drain(app, client, monkeypatch):
     upload_csv(app, client, "Song,Artist\nA,B\nC,D\n")
-    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10)
+    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     monkeypatch.setattr(sio, "start_background_task", lambda *args: None)
@@ -1130,7 +1385,7 @@ def test_never_fitting_pending_fails_closed_on_drain(app, client, monkeypatch):
 
 def test_cumulative_budget_blocks_second_artifact_before_spawn(app, client, monkeypatch):
     upload_csv(app, client, "Song,Artist\nA,B\nC,D\n")
-    app.config.update(TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10)
+    app.config.update(TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
@@ -1157,7 +1412,7 @@ def test_cumulative_budget_blocks_second_artifact_before_spawn(app, client, monk
 
 def test_actual_byte_overflow_deletes_output_and_reconciles_counters(app, client, monkeypatch):
     upload_csv(app, client)
-    app.config.update(TASK_BYTE_RESERVATION=4, MAX_JOB_BYTES=5, MAX_ARTIFACT_BYTES=10)
+    app.config.update(TASK_BYTE_RESERVATION=4, MAX_JOB_BYTES=5, MAX_ARTIFACT_BYTES=10, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")

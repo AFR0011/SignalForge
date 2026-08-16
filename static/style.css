@@ -261,6 +261,21 @@ progress::-webkit-progress-value { background: linear-gradient(90deg, var(--acid
 progress::-moz-progress-bar { background: linear-gradient(90deg, var(--acid), var(--cyan)); }
 .job-label { margin: 20px 0 0; color: var(--dim); font-size: .75rem; }
 .job-label code { color: var(--muted); }
+.library-destination-block { margin-top: 18px; }
+#library-destination { margin: 0; color: var(--ink); font-size: .82rem; }
+.library-path { margin: 6px 0 0; color: var(--dim); font-size: .72rem; word-break: break-all; }
+#library-destination-error { margin-top: 10px; }
+#change-folder { margin-top: 10px; }
+#library-fallback { display: grid; gap: 8px; margin-top: 12px; }
+#library-fallback label { color: var(--muted); font-size: .78rem; }
+#library-fallback input {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
 
 .queue-panel { min-width: 0; padding: 26px; }
 .queue-heading { align-items: center; }

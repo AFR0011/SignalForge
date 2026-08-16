@@ -4,6 +4,8 @@
   const body = document.body;
   const jobId = body.dataset.jobId;
   const selectionLimit = Number(body.dataset.selectionLimit || 2000);
+  const writeThrough = body.dataset.writeThrough === "true";
+  let libraryReady = body.dataset.libraryReady !== "false";
   const csrfMeta = document.querySelector('meta[name="csrf-token"]');
   const toastRegion = document.getElementById("toast-region");
   const rows = [...document.querySelectorAll(".track-table tbody tr")];
@@ -54,6 +56,21 @@
     return parseResponse(response);
   };
 
+  const setLibraryControls = (ready) => {
+    libraryReady = ready;
+    body.dataset.libraryReady = ready ? "true" : "false";
+    if (writeThrough) {
+      if (startButton) startButton.disabled = !ready;
+      if (retryButton) retryButton.disabled = !ready;
+    }
+    const fallback = document.getElementById("library-fallback");
+    if (fallback) fallback.hidden = ready;
+    const changeFolder = document.getElementById("change-folder");
+    if (changeFolder) changeFolder.hidden = ready;
+    const destError = document.getElementById("library-destination-error");
+    if (destError && ready) destError.hidden = true;
+  };
+
   const withBusyButton = async (button, busyLabel, task) => {
     if (!button || button.disabled) return;
     const original = button.textContent;
@@ -62,10 +79,23 @@
     try {
       await task();
     } catch (error) {
-      announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
+      const message = error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message;
+      if (String(error.message || "").toLowerCase().includes("library folder")) {
+        const destError = document.getElementById("library-destination-error");
+        if (destError) {
+          destError.hidden = false;
+          destError.textContent = error.message;
+        }
+        setLibraryControls(false);
+      }
+      announce(message, "error");
     } finally {
-      button.disabled = false;
       button.textContent = original;
+      if (writeThrough && !libraryReady && (button === startButton || button === retryButton)) {
+        button.disabled = true;
+      } else {
+        button.disabled = false;
+      }
     }
   };
 
@@ -87,15 +117,15 @@
     const failed = rows.filter((row) => row.dataset.state === "failed").length;
     const settled = complete + failed;
     const percent = rows.length ? Math.round((settled / rows.length) * 100) : 0;
-    const readyMetric = document.getElementById("metric-ready");
+    const savedMetric = document.getElementById("metric-saved");
     const failedMetric = document.getElementById("metric-failed");
     const overall = document.getElementById("overall-progress");
     const label = document.getElementById("overall-label");
-    if (readyMetric) readyMetric.textContent = String(complete);
+    if (savedMetric) savedMetric.textContent = String(complete);
     if (failedMetric) failedMetric.textContent = String(failed);
     if (overall) overall.value = percent;
     if (label) label.textContent = `${percent}%`;
-    if (zipButton) zipButton.hidden = complete === 0;
+    if (zipButton) zipButton.hidden = writeThrough || complete === 0;
   };
 
   const setTrackState = (data) => {
@@ -113,7 +143,7 @@
       if (hasProgress) progress.value = Number(data.progress);
     }
     if (link) {
-      if (data.status === "success" && data.download_url) {
+      if (data.download_url) {
         link.href = data.download_url;
         link.hidden = false;
       } else if (data.status !== "success") {
@@ -352,6 +382,43 @@
     if (button) {
       button.disabled = true;
       button.textContent = "Importing…";
+    }
+  });
+
+  document.getElementById("change-folder")?.addEventListener("click", () => {
+    document.getElementById("library-path-input")?.focus();
+  });
+
+  document.getElementById("library-fallback")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = document.getElementById("library-path-input");
+    const path = (input?.value || "").trim();
+    const destError = document.getElementById("library-destination-error");
+    if (!path) {
+      if (destError) {
+        destError.hidden = false;
+        destError.textContent = "Choose a library folder";
+      }
+      announce("Choose a library folder", "error");
+      return;
+    }
+    try {
+      const result = await mutate("/library-root", {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      const dest = document.getElementById("library-destination");
+      if (dest) dest.textContent = `Saving to ${result.library_root}`;
+      const helper = document.querySelector(".library-path");
+      if (helper) helper.textContent = result.library_root;
+      setLibraryControls(true);
+      announce("Library folder updated.", "success");
+    } catch (error) {
+      if (destError) {
+        destError.hidden = false;
+        destError.textContent = error.message;
+      }
+      announce(error.message, "error");
     }
   });
 

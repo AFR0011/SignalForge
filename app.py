@@ -60,6 +60,7 @@ SECRET_PLACEHOLDERS = {
     "secret",
     "your-secret-key",
 }
+WINDOWS_UNSAFE_FILENAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 
 @dataclass
@@ -760,6 +761,87 @@ def format_title(raw_title: str) -> str:
     return re.sub(r"('(S|T))\b", lambda match: match.group(1).lower(), title)
 
 
+class LibraryWriteError(RuntimeError):
+    pass
+
+
+def library_filename_stem(raw_title: str) -> str:
+    sanitized = WINDOWS_UNSAFE_FILENAME.sub("", raw_title)
+    titled = format_title(sanitized)
+    cleaned = re.sub(r"\s+", " ", titled).strip(" .")
+    return (cleaned[:96].rstrip(" .") or "Track")
+
+
+def default_library_root() -> Path:
+    return Path.home() / "Music" / "SignalForge"
+
+
+def library_root_ready(root: Path) -> bool:
+    try:
+        resolved = root.expanduser().resolve()
+    except (OSError, RuntimeError):
+        return False
+    if resolved.exists():
+        return resolved.is_dir() and os.access(resolved, os.W_OK)
+    for ancestor in resolved.parents:
+        if ancestor.exists():
+            return ancestor.is_dir() and os.access(ancestor, os.W_OK)
+    return False
+
+
+def ensure_library_root(root: Path) -> Path:
+    resolved = root.expanduser().resolve()
+    try:
+        resolved.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as exc:
+        raise LibraryWriteError("Could not create the library folder") from exc
+    if not resolved.is_dir() or not os.access(resolved, os.W_OK):
+        raise LibraryWriteError("Library folder is not writable")
+    return resolved
+
+
+def safe_library_path(root: Path, filename: str) -> Path:
+    if not filename or filename != Path(filename).name:
+        raise ValueError("Invalid filename")
+    resolved_root = root.resolve()
+    path = (resolved_root / filename).resolve()
+    if path.parent != resolved_root:
+        raise ValueError("Artifact is outside the library root")
+    return path
+
+
+_library_name_lock = threading.Lock()
+
+
+def save_mp3_to_library(source: Path, root: Path, stem: str) -> str:
+    if not source.is_file():
+        raise LibraryWriteError("Downloaded file is missing")
+    resolved_root = ensure_library_root(root)
+    with _library_name_lock:
+        destination = _allocate_library_path_locked(resolved_root, stem)
+        try:
+            os.replace(source, destination)
+        except OSError:
+            try:
+                shutil.copy2(source, destination)
+                source.unlink()
+            except OSError as exc:
+                raise LibraryWriteError("Could not save the file to the library folder") from exc
+        return destination.name
+
+
+def _allocate_library_path_locked(root: Path, stem: str) -> Path:
+    candidate = safe_library_path(root, f"{stem}.mp3")
+    if not candidate.exists() or candidate.stat().st_size == 0:
+        return candidate
+    suffix = 2
+    while True:
+        candidate = safe_library_path(root, f"{stem} ({suffix}).mp3")
+        if not candidate.exists() or candidate.stat().st_size == 0:
+            return candidate
+        suffix += 1
+
+
 def resolve_ffmpeg(configured_path: str | None = None) -> str:
     override = configured_path or os.environ.get("FFMPEG_PATH")
     if override:
@@ -1444,44 +1526,80 @@ def process_song(
                 publish("downloading", message, percent)
 
             ffmpeg = resolve_ffmpeg(app.config.get("FFMPEG_PATH"))
-            download_song_from_youtube(
-                f"{song['Artist']} {song['Song']}",
-                output_base,
-                ffmpeg,
-                on_progress,
-                int(app.config["MAX_SOURCE_BYTES"]),
-                artist=song["Artist"],
-                title=song["Song"],
-                watch_url=watch,
-                picker_out=picker_out,
-                picker_filled=picker_filled,
+            reuse_job_file = bool(
+                app.config["WRITE_THROUGH"]
+                and filepath.is_file()
+                and filepath.stat().st_size > 0
             )
-            tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
+            if not reuse_job_file:
+                download_song_from_youtube(
+                    f"{song['Artist']} {song['Song']}",
+                    output_base,
+                    ffmpeg,
+                    on_progress,
+                    int(app.config["MAX_SOURCE_BYTES"]),
+                    artist=song["Artist"],
+                    title=song["Song"],
+                    watch_url=watch,
+                    picker_out=picker_out,
+                    picker_filled=picker_filled,
+                )
+                tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
             actual_bytes = filepath.stat().st_size
             if actual_bytes > int(app.config["MAX_ARTIFACT_BYTES"]):
                 raise ValueError("Downloaded file exceeds the configured size limit")
-            retained = job_registry.retain_artifact(
-                job,
-                index,
-                filename,
-                actual_bytes,
-                int(app.config["MAX_JOB_BYTES"]),
-                int(app.config["MAX_TOTAL_JOB_BYTES"]),
-            )
-            if not retained:
-                raise ValueError("Downloaded file exceeds the remaining per-job disk budget")
-            with job.lock:
-                job.source_choices.pop(index, None)
-                job.forced_sources.pop(index, None)
-            artifact_url = f"/jobs/{job_id}/files/{quote(filename)}"
-            publish("success", "Ready to download", 100, download_url=artifact_url)
+            if app.config["WRITE_THROUGH"]:
+                library_name = save_mp3_to_library(
+                    filepath,
+                    Path(app.config["LIBRARY_ROOT"]),
+                    library_filename_stem(song["Song"]),
+                )
+                with job.lock:
+                    job.source_choices.pop(index, None)
+                    job.forced_sources.pop(index, None)
+                    job.failed.discard(index)
+                publish("success", "Saved", 100, library_filename=library_name)
+            else:
+                retained = job_registry.retain_artifact(
+                    job,
+                    index,
+                    filename,
+                    actual_bytes,
+                    int(app.config["MAX_JOB_BYTES"]),
+                    int(app.config["MAX_TOTAL_JOB_BYTES"]),
+                )
+                if not retained:
+                    raise ValueError("Downloaded file exceeds the remaining per-job disk budget")
+                with job.lock:
+                    job.source_choices.pop(index, None)
+                    job.forced_sources.pop(index, None)
+                artifact_url = f"/jobs/{job_id}/files/{quote(filename)}"
+                publish("success", "Ready to download", 100, download_url=artifact_url)
     except Exception as exc:
         LOGGER.exception("Job %s track %s failed", job_id, index)
-        if not retained:
+        keep_outputs = isinstance(exc, LibraryWriteError)
+        if not retained and not keep_outputs:
             _remove_task_outputs(output_base)
+        download_url = None
+        if keep_outputs and output_base is not None:
+            artifact = output_base.with_suffix(".mp3")
+            if artifact.is_file():
+                retained = job_registry.retain_artifact(
+                    job,
+                    index,
+                    artifact.name,
+                    artifact.stat().st_size,
+                    int(app.config["MAX_JOB_BYTES"]),
+                    int(app.config["MAX_TOTAL_JOB_BYTES"]),
+                )
+                if retained:
+                    download_url = f"/jobs/{job_id}/files/{quote(artifact.name)}"
         with job.lock:
             job.failed.add(index)
-            if forced_id:
+            if keep_outputs:
+                job.source_choices.pop(index, None)
+                can_choose = False
+            elif forced_id:
                 if "403" in str(exc):
                     remaining = [
                         item for item in job.source_choices.get(index, [])
@@ -1491,18 +1609,25 @@ def process_song(
                         job.source_choices[index] = remaining
                     else:
                         job.source_choices.pop(index, None)
+                can_choose = bool(job.source_choices.get(index))
             elif picker_out:
                 job.source_choices[index] = list(picker_out)
+                can_choose = bool(job.source_choices.get(index))
             else:
                 job.source_choices.pop(index, None)
-            can_choose = bool(job.source_choices.get(index))
-        if can_choose:
+                can_choose = False
+        if keep_outputs:
+            message = str(exc) or "Could not save the file to the library folder."
+        elif can_choose:
             message = "Download failed. You can retry this track or choose a source."
         elif picker_filled[0] or (forced_id and "403" in str(exc)):
             message = "Download failed. No alternate sources found."
         else:
             message = "Download failed. You can retry this track."
-        publish("failed", message, can_choose_source=can_choose)
+        extra: dict[str, Any] = {"can_choose_source": can_choose}
+        if download_url:
+            extra["download_url"] = download_url
+        publish("failed", message, **extra)
     finally:
         job_registry.release_task(job, index, reserved)
         drain_pending(app, sio, job)
@@ -1594,6 +1719,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         JOB_TTL_SECONDS=3_600,
         ZIP_MAX_BYTES=250_000_000,
         ARTWORK_MAX_BYTES=5_000_000,
+        LIBRARY_ROOT=None,
+        WRITE_THROUGH=None,
         RATELIMIT_ENABLED=True,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -1617,6 +1744,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         raise ValueError("JOB_TTL_SECONDS must be positive")
     _configure_secret(flask_app, test_config)
     flask_app.config["SESSION_COOKIE_SECURE"] = bool(flask_app.config["PRODUCTION"])
+    if flask_app.config["WRITE_THROUGH"] is None:
+        flask_app.config["WRITE_THROUGH"] = not bool(flask_app.config["PRODUCTION"])
+    if not flask_app.config.get("LIBRARY_ROOT"):
+        flask_app.config["LIBRARY_ROOT"] = str(default_library_root())
     data_root = Path(flask_app.config["DATA_ROOT"]).expanduser().resolve()
     data_root.mkdir(parents=True, exist_ok=True)
     flask_app.config["DATA_ROOT"] = str(data_root)
@@ -1746,9 +1877,21 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "retained_bytes": job.retained_bytes,
             }
 
+    def probe_library_root() -> tuple[bool, str | None]:
+        if not flask_app.config["WRITE_THROUGH"]:
+            return True, None
+        if library_root_ready(Path(flask_app.config["LIBRARY_ROOT"])):
+            return True, None
+        return False, "Could not use this library folder"
+
     def render_current(error_message: str | None = None, status: int = 200) -> Any:
         job = ensure_current_job()
         view = job_view(job)
+        library_ready, library_error = probe_library_root()
+        saved_count = sum(
+            1 for state in view["statuses"].values()
+            if isinstance(state, dict) and state.get("status") == "success"
+        )
         return render_template(
             "index.html",
             songs=view["songs"],
@@ -1757,6 +1900,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             selection_limit=flask_app.config["SELECTION_LIMIT"],
             csv_max_rows=flask_app.config["CSV_MAX_ROWS"],
             csv_max_bytes=flask_app.config["CSV_MAX_BYTES"],
+            write_through=flask_app.config["WRITE_THROUGH"],
+            library_root=flask_app.config["LIBRARY_ROOT"],
+            library_ready=library_ready,
+            library_error=library_error,
+            saved_count=saved_count,
             error_message=error_message,
         ), status
 
@@ -1906,6 +2054,25 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return jsonify(error="File not found"), 404
         return flask_app.response_class(image, mimetype="image/jpeg")
 
+    @flask_app.route("/library-root", methods=["POST"])
+    @limiter.limit("20 per minute")
+    def set_library_root() -> Any:
+        job, error_response = mutation_job()
+        if error_response:
+            return error_response
+        if not flask_app.config["WRITE_THROUGH"]:
+            return jsonify(error="Library folder can only be changed on a local run"), 409
+        payload = request.get_json(silent=True) or {}
+        raw = payload.get("path")
+        if not isinstance(raw, str) or not raw.strip():
+            return jsonify(error="Choose a library folder"), 400
+        try:
+            resolved = ensure_library_root(Path(raw.strip()))
+        except LibraryWriteError as exc:
+            return jsonify(error=str(exc)), 409
+        flask_app.config["LIBRARY_ROOT"] = str(resolved)
+        return jsonify(library_root=str(resolved))
+
     @flask_app.route("/download", methods=["POST"])
     @limiter.limit("20 per minute")
     def download_songs() -> Any:
@@ -1913,6 +2080,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if error_response:
             return error_response
         assert job is not None
+        library_ready, library_error = probe_library_root()
+        if not library_ready:
+            return jsonify(error=library_error or "Could not use this library folder"), 409
         try:
             indices = validate_selection(
                 selected_from_request(), len(job.songs), int(flask_app.config["SELECTION_LIMIT"])
@@ -1932,6 +2102,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if error_response:
             return error_response
         assert job is not None
+        library_ready, library_error = probe_library_root()
+        if not library_ready:
+            return jsonify(error=library_error or "Could not use this library folder"), 409
         with job.lock:
             indices = sorted(job.failed)
         if not indices:

@@ -12,6 +12,13 @@ def clear_registry():
     application.job_registry.clear()
 
 
+@pytest.fixture(autouse=True)
+def isolate_default_library_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        application, "default_library_root", lambda: tmp_path / "default-library"
+    )
+
+
 @pytest.fixture
 def app(tmp_path):
     return application.create_app(
@@ -20,6 +27,7 @@ def app(tmp_path):
             "SECRET_KEY": "test-secret-that-is-longer-than-thirty-two-characters",
             "PRODUCTION": False,
             "DATA_ROOT": str(tmp_path / "jobs"),
+            "LIBRARY_ROOT": str(tmp_path / "library"),
             "RATELIMIT_ENABLED": False,
             "CSV_MAX_BYTES": 512,
             "CSV_MAX_ROWS": 3,
