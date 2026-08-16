@@ -420,6 +420,30 @@ def test_process_song_write_through_off_in_production_retains_job_file(tmp_path,
     assert not (Path(prod.config["LIBRARY_ROOT"]) / "Halo.mp3").exists()
 
 
+def test_process_song_retries_library_move_without_search(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    filename = application.deterministic_filename(0, job.songs[0])
+    existing = job.directory / filename
+    existing.write_bytes(b"already")
+    calls = {"download": 0}
+
+    def boom(*_args, **_kwargs):
+        calls["download"] += 1
+        raise AssertionError("search should not run")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", boom)
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: (_ for _ in ()).throw(AssertionError("tag")))
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert calls["download"] == 0
+    assert (Path(app.config["LIBRARY_ROOT"]) / "Halo.mp3").read_bytes() == b"already"
+    assert job.statuses[0]["message"] == "Saved"
+
+
 def test_process_song_library_move_failure_keeps_job_file(app, client, monkeypatch):
     upload_csv(app, client)
     job = current_job(client)

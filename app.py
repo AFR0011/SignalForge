@@ -1513,19 +1513,25 @@ def process_song(
                 publish("downloading", message, percent)
 
             ffmpeg = resolve_ffmpeg(app.config.get("FFMPEG_PATH"))
-            download_song_from_youtube(
-                f"{song['Artist']} {song['Song']}",
-                output_base,
-                ffmpeg,
-                on_progress,
-                int(app.config["MAX_SOURCE_BYTES"]),
-                artist=song["Artist"],
-                title=song["Song"],
-                watch_url=watch,
-                picker_out=picker_out,
-                picker_filled=picker_filled,
+            reuse_job_file = bool(
+                app.config["WRITE_THROUGH"]
+                and filepath.is_file()
+                and filepath.stat().st_size > 0
             )
-            tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
+            if not reuse_job_file:
+                download_song_from_youtube(
+                    f"{song['Artist']} {song['Song']}",
+                    output_base,
+                    ffmpeg,
+                    on_progress,
+                    int(app.config["MAX_SOURCE_BYTES"]),
+                    artist=song["Artist"],
+                    title=song["Song"],
+                    watch_url=watch,
+                    picker_out=picker_out,
+                    picker_filled=picker_filled,
+                )
+                tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
             actual_bytes = filepath.stat().st_size
             if actual_bytes > int(app.config["MAX_ARTIFACT_BYTES"]):
                 raise ValueError("Downloaded file exceeds the configured size limit")
