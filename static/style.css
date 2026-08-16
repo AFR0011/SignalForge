@@ -288,6 +288,7 @@ tr[data-state="failed"] .status-badge i { background: var(--danger); }
 .track-progress { display: block; width: 140px; margin-top: 7px; }
 .download-link { display: inline-block; padding: 6px 9px; color: var(--acid-ink); background: var(--acid); border-radius: 7px; font-size: .74rem; font-weight: 800; text-decoration: none; }
 .choose-source { margin-left: 8px; }
+.source-dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .source-dialog-chrome { min-width: min(520px, 100%); padding: 20px; }
 .source-cards { display: grid; gap: 12px; margin: 16px 0; }
 .source-card { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }

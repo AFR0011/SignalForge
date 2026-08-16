@@ -50,6 +50,8 @@ def test_render_includes_accessibility_and_local_ui_contract(app, client):
     assert b'aria-live="polite"' in response.data
     assert b'id="drop-zone"' in response.data
     assert b'id="source-dialog"' in response.data
+    assert b'id="source-dialog-more"' in response.data
+    assert b"Load more" in response.data
     assert b"Choose a source" in response.data
     assert b"toastify" not in response.data.lower()
     assert b"/static/socket.io.min.js" in response.data
@@ -83,6 +85,16 @@ def test_failed_row_renders_choose_source_when_flag_set(app, client):
         b'class="button button-quiet choose-source" type="button" data-index="0" hidden'
         in non_failed_page.data
     )
+
+
+def test_source_dialog_load_more_is_a_non_submit_button():
+    html = Path("templates/index.html").read_text(encoding="utf-8")
+    assert 'id="source-dialog-more" type="button" hidden' in html
+    js = Path("static/app.js").read_text(encoding="utf-8")
+    assert "const PICKER_PAGE_SIZE = 3;" in js
+    assert "source-dialog-more" in js
+    css = Path("static/style.css").read_text(encoding="utf-8")
+    assert ".source-dialog-actions" in css
 
 
 @pytest.mark.parametrize("path", ["/this-path-does-not-exist", "/favicon.ico"])

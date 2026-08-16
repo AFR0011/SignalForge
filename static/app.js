@@ -164,9 +164,14 @@
   const sourceDialog = document.getElementById("source-dialog");
   const sourceMeta = document.getElementById("source-dialog-meta");
   const sourceCards = document.getElementById("source-dialog-cards");
+  const sourceMore = document.getElementById("source-dialog-more");
+  const PICKER_PAGE_SIZE = 3;
   let sourceOpener = null;
   let sourceDialogGeneration = 0;
   let sourceDialogAbortController = null;
+  let sourceDialogIndex = null;
+  let storedSources = [];
+  let shownCount = 0;
 
   const invalidateSourceDialogFetch = () => {
     sourceDialogGeneration += 1;
@@ -208,6 +213,56 @@
     });
   };
 
+  const updateLoadMoreVisibility = () => {
+    if (sourceMore) sourceMore.hidden = storedSources.length <= shownCount;
+  };
+
+  const appendSourceCards = (index, sources) => {
+    sources.forEach((source) => {
+      const card = document.createElement("article");
+      card.className = "source-card";
+      const image = document.createElement("img");
+      image.alt = "";
+      image.src = `/tracks/${index}/source-thumbs/${encodeURIComponent(source.id)}`;
+      image.addEventListener("error", () => image.remove());
+      const heading = document.createElement("h3");
+      heading.textContent = source.title || "Untitled";
+      const channel = document.createElement("p");
+      channel.textContent = [source.channel, formatDuration(source.duration)].filter(Boolean).join(" · ");
+      const use = document.createElement("button");
+      use.type = "button";
+      use.className = "button button-primary";
+      use.textContent = "Use this source";
+      use.addEventListener("click", async () => {
+        if (use.disabled) return;
+        disableSourceCardButtons(use);
+        if (sourceMore) sourceMore.disabled = true;
+        try {
+          const result = await mutate("/choose-source", {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ index, video_id: source.id }),
+          });
+          setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" });
+          closeSourceDialog();
+          announce(`${result.started.length} track${result.started.length === 1 ? "" : "s"} queued.`, "success");
+        } catch (error) {
+          enableSourceCardButtons();
+          if (sourceMore) sourceMore.disabled = false;
+          announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
+        }
+      });
+      card.append(image, heading, channel, use);
+      sourceCards?.append(card);
+    });
+  };
+
+  const renderNextSourcePage = (index) => {
+    const next = storedSources.slice(shownCount, shownCount + PICKER_PAGE_SIZE);
+    appendSourceCards(index, next);
+    shownCount += next.length;
+    updateLoadMoreVisibility();
+  };
+
   const openSourceDialog = async (button) => {
     const row = button.closest("tr");
     const index = Number(button.dataset.index);
@@ -217,6 +272,13 @@
     const abortController = new AbortController();
     sourceDialogAbortController = abortController;
     sourceOpener = button;
+    storedSources = [];
+    shownCount = 0;
+    sourceDialogIndex = index;
+    if (sourceMore) {
+      sourceMore.disabled = false;
+      sourceMore.hidden = true;
+    }
     const title = row.querySelector('[data-label="Track"] strong')?.textContent || "this track";
     const artist = row.querySelector('[data-label="Artist"]')?.textContent || "";
     if (sourceMeta) sourceMeta.textContent = `${title} · ${artist}`;
@@ -230,40 +292,12 @@
         signal: abortController.signal,
       }));
       if (generation !== sourceDialogGeneration) return;
-      (data.sources || []).forEach((source) => {
-        const card = document.createElement("article");
-        card.className = "source-card";
-        const image = document.createElement("img");
-        image.alt = "";
-        image.src = `/tracks/${index}/source-thumbs/${encodeURIComponent(source.id)}`;
-        image.addEventListener("error", () => image.remove());
-        const heading = document.createElement("h3");
-        heading.textContent = source.title || "Untitled";
-        const channel = document.createElement("p");
-        channel.textContent = [source.channel, formatDuration(source.duration)].filter(Boolean).join(" · ");
-        const use = document.createElement("button");
-        use.type = "button";
-        use.className = "button button-primary";
-        use.textContent = "Use this source";
-        use.addEventListener("click", async () => {
-          if (use.disabled) return;
-          disableSourceCardButtons(use);
-          try {
-            const result = await mutate("/choose-source", {
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ index, video_id: source.id }),
-            });
-            setTrackState({ job_id: jobId, index, status: "queued", message: "Queued" });
-            closeSourceDialog();
-            announce(`${result.started.length} track${result.started.length === 1 ? "" : "s"} queued.`, "success");
-          } catch (error) {
-            enableSourceCardButtons();
-            announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
-          }
-        });
-        card.append(image, heading, channel, use);
-        sourceCards?.append(card);
-      });
+      storedSources = data.sources || [];
+      shownCount = 0;
+      sourceDialogIndex = index;
+      if (sourceCards) sourceCards.replaceChildren();
+      if (sourceMore) sourceMore.disabled = false;
+      renderNextSourcePage(index);
     } catch (error) {
       if (generation !== sourceDialogGeneration || error.name === "AbortError") return;
       closeSourceDialog();
@@ -275,6 +309,11 @@
     button.addEventListener("click", () => {
       openSourceDialog(button).catch((error) => announce(error.message, "error"));
     });
+  });
+  sourceMore?.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (sourceDialogIndex == null || sourceMore.hidden) return;
+    renderNextSourcePage(sourceDialogIndex);
   });
   sourceDialog?.addEventListener("close", finalizeSourceDialogClose);
   sourceDialog?.addEventListener("click", (event) => {
