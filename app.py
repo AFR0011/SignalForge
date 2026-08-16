@@ -1529,24 +1529,37 @@ def process_song(
             actual_bytes = filepath.stat().st_size
             if actual_bytes > int(app.config["MAX_ARTIFACT_BYTES"]):
                 raise ValueError("Downloaded file exceeds the configured size limit")
-            retained = job_registry.retain_artifact(
-                job,
-                index,
-                filename,
-                actual_bytes,
-                int(app.config["MAX_JOB_BYTES"]),
-                int(app.config["MAX_TOTAL_JOB_BYTES"]),
-            )
-            if not retained:
-                raise ValueError("Downloaded file exceeds the remaining per-job disk budget")
-            with job.lock:
-                job.source_choices.pop(index, None)
-                job.forced_sources.pop(index, None)
-            artifact_url = f"/jobs/{job_id}/files/{quote(filename)}"
-            publish("success", "Ready to download", 100, download_url=artifact_url)
+            if app.config["WRITE_THROUGH"]:
+                library_name = save_mp3_to_library(
+                    filepath,
+                    Path(app.config["LIBRARY_ROOT"]),
+                    library_filename_stem(song["Song"]),
+                )
+                with job.lock:
+                    job.source_choices.pop(index, None)
+                    job.forced_sources.pop(index, None)
+                    job.failed.discard(index)
+                publish("success", "Saved", 100, library_filename=library_name)
+            else:
+                retained = job_registry.retain_artifact(
+                    job,
+                    index,
+                    filename,
+                    actual_bytes,
+                    int(app.config["MAX_JOB_BYTES"]),
+                    int(app.config["MAX_TOTAL_JOB_BYTES"]),
+                )
+                if not retained:
+                    raise ValueError("Downloaded file exceeds the remaining per-job disk budget")
+                with job.lock:
+                    job.source_choices.pop(index, None)
+                    job.forced_sources.pop(index, None)
+                artifact_url = f"/jobs/{job_id}/files/{quote(filename)}"
+                publish("success", "Ready to download", 100, download_url=artifact_url)
     except Exception as exc:
         LOGGER.exception("Job %s track %s failed", job_id, index)
-        if not retained:
+        keep_outputs = isinstance(exc, LibraryWriteError)
+        if not retained and not keep_outputs:
             _remove_task_outputs(output_base)
         with job.lock:
             job.failed.add(index)
@@ -1565,7 +1578,9 @@ def process_song(
             else:
                 job.source_choices.pop(index, None)
             can_choose = bool(job.source_choices.get(index))
-        if can_choose:
+        if keep_outputs:
+            message = str(exc) or "Could not save the file to the library folder."
+        elif can_choose:
             message = "Download failed. You can retry this track or choose a source."
         elif picker_filled[0] or (forced_id and "403" in str(exc)):
             message = "Download failed. No alternate sources found."

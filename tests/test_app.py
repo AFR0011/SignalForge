@@ -250,10 +250,12 @@ def test_worker_runs_without_request_session_and_targets_only_job_room(app, clie
     application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), reservation)
     assert job.active_count == 0
     assert job.reserved_bytes == 0
-    assert job.retained_bytes == 5
-    assert job.files[0].endswith(".mp3")
+    assert job.retained_bytes == 0
+    assert job.files == {}
     assert all(item[2]["to"] == application.job_room(job.job_id) for item in emitted)
-    assert emitted[-1][1]["download_url"].startswith(f"/jobs/{job.job_id}/files/")
+    assert emitted[-1][1]["message"] == "Saved"
+    assert emitted[-1][1]["library_filename"] == "Halo.mp3"
+    assert "download_url" not in emitted[-1][1]
 
 
 def test_process_song_stores_picker_sources_and_can_choose_flag(app, client, monkeypatch):
@@ -359,6 +361,88 @@ def test_process_song_forced_watch_url_non_403_keeps_picker_id(app, client, monk
     assert [item["id"] for item in job.source_choices[0]] == ["labellabel1", "lyriclyric1"]
     assert job.statuses[0]["can_choose_source"] is True
     assert "choose a source" in job.statuses[0]["message"]
+
+
+def test_process_song_write_through_saves_title_case_and_skips_retain(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+
+    def write_mp3(_query, output_base, _ffmpeg, _progress, _max_source, **_kwargs):
+        output_base.with_suffix(".mp3").write_bytes(b"audio")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", write_mp3)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    library = Path(app.config["LIBRARY_ROOT"])
+    assert (library / "Halo.mp3").read_bytes() == b"audio"
+    assert job.files == {}
+    assert job.retained_bytes == 0
+    assert job.statuses[0]["status"] == "success"
+    assert job.statuses[0]["message"] == "Saved"
+    assert job.statuses[0]["library_filename"] == "Halo.mp3"
+    assert "download_url" not in job.statuses[0]
+
+
+def test_process_song_write_through_off_in_production_retains_job_file(tmp_path, monkeypatch):
+    prod = application.create_app(
+        {
+            "TESTING": True,
+            "PRODUCTION": True,
+            "SECRET_KEY": "a-valid-production-secret-with-more-than-32-characters",
+            "DATA_ROOT": str(tmp_path / "jobs"),
+            "LIBRARY_ROOT": str(tmp_path / "library"),
+            "RATELIMIT_ENABLED": False,
+            "TASK_BYTE_RESERVATION": 10,
+            "MAX_JOB_BYTES": 100,
+        }
+    )
+    client = prod.test_client()
+    upload_csv(prod, client)
+    job = current_job(client)
+    sio = prod.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        application,
+        "download_song_from_youtube",
+        lambda _q, output_base, *_a, **_k: output_base.with_suffix(".mp3").write_bytes(b"audio"),
+    )
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(prod, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert job.files[0].endswith(".mp3")
+    assert job.retained_bytes > 0
+    assert "download_url" in job.statuses[0]
+    assert not (Path(prod.config["LIBRARY_ROOT"]) / "Halo.mp3").exists()
+
+
+def test_process_song_library_move_failure_keeps_job_file(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        application,
+        "download_song_from_youtube",
+        lambda _q, output_base, *_a, **_k: output_base.with_suffix(".mp3").write_bytes(b"audio"),
+    )
+    monkeypatch.setattr(
+        application,
+        "save_mp3_to_library",
+        lambda *args, **kwargs: (_ for _ in ()).throw(application.LibraryWriteError("Could not save the file to the library folder")),
+    )
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert job.statuses[0]["status"] == "failed"
+    assert "library folder" in job.statuses[0]["message"]
+    assert list(job.directory.glob("*.mp3"))
+    assert job.files == {}
 
 
 def test_choose_source_routes_require_failed_stored_id(app, client, monkeypatch):
@@ -1101,7 +1185,7 @@ def test_task_ceiling_starts_prefix_and_queues_remainder(app, client, monkeypatc
 
 def test_pending_queue_drains_after_task_release(app, client, monkeypatch):
     upload_csv(app, client, "Song,Artist\nA,B\nC,D\n")
-    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=100)
+    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=100, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     later_starts = []
@@ -1175,7 +1259,7 @@ def test_full_imported_list_can_be_selected_and_queued(tmp_path, monkeypatch):
 
 def test_never_fitting_pending_fails_closed_on_drain(app, client, monkeypatch):
     upload_csv(app, client, "Song,Artist\nA,B\nC,D\n")
-    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10)
+    app.config.update(MAX_ACTIVE_TASKS_PER_JOB=1, TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     monkeypatch.setattr(sio, "start_background_task", lambda *args: None)
@@ -1200,7 +1284,7 @@ def test_never_fitting_pending_fails_closed_on_drain(app, client, monkeypatch):
 
 def test_cumulative_budget_blocks_second_artifact_before_spawn(app, client, monkeypatch):
     upload_csv(app, client, "Song,Artist\nA,B\nC,D\n")
-    app.config.update(TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10)
+    app.config.update(TASK_BYTE_RESERVATION=6, MAX_JOB_BYTES=10, MAX_ARTIFACT_BYTES=10, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
@@ -1227,7 +1311,7 @@ def test_cumulative_budget_blocks_second_artifact_before_spawn(app, client, monk
 
 def test_actual_byte_overflow_deletes_output_and_reconciles_counters(app, client, monkeypatch):
     upload_csv(app, client)
-    app.config.update(TASK_BYTE_RESERVATION=4, MAX_JOB_BYTES=5, MAX_ARTIFACT_BYTES=10)
+    app.config.update(TASK_BYTE_RESERVATION=4, MAX_JOB_BYTES=5, MAX_ARTIFACT_BYTES=10, WRITE_THROUGH=False)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
     monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
