@@ -1864,7 +1864,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:",
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self' ws: wss:",
         )
         return response
 
@@ -2128,6 +2128,36 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if not image:
             return jsonify(error="File not found"), 404
         return flask_app.response_class(image, mimetype="image/jpeg")
+
+    @flask_app.route("/tracks/<int:index>/source-previews/<video_id>", methods=["GET"])
+    @limiter.limit("60 per minute")
+    def track_source_preview(index: int, video_id: str) -> Any:
+        job = owned_job()
+        if job is None:
+            return jsonify(error="File not found"), 404
+        bound = youtube_video_id(video_id)
+        with job.lock:
+            allowed = {item.get("id") for item in job.source_choices.get(index) or []}
+            if not failed_track_locked(job, index) or bound is None or bound not in allowed:
+                return jsonify(error="File not found"), 404
+        with job.preview_lock:
+            cached = preview_clip_path(job.directory, bound)
+            if cached.is_file() and 0 < cached.stat().st_size <= PREVIEW_MAX_BYTES:
+                payload = cached.read_bytes()
+            else:
+                built = build_source_preview(
+                    job.directory,
+                    bound,
+                    resolve_ffmpeg(flask_app.config.get("FFMPEG_PATH")),
+                    int(flask_app.config["MAX_SOURCE_BYTES"]),
+                )
+                if built is None or not built.is_file():
+                    return jsonify(error="File not found"), 404
+                if built.stat().st_size > PREVIEW_MAX_BYTES:
+                    built.unlink(missing_ok=True)
+                    return jsonify(error="File not found"), 404
+                payload = built.read_bytes()
+        return flask_app.response_class(payload, mimetype="audio/mpeg")
 
     @flask_app.route("/library-root", methods=["POST"])
     @limiter.limit("20 per minute")

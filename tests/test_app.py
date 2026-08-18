@@ -188,6 +188,8 @@ def test_valid_upload_renders_and_cookie_session_contains_only_job_id(app, clien
 def test_render_includes_accessibility_and_local_ui_contract(app, client):
     response = client.get("/")
     assert response.status_code == 200
+    assert "media-src 'self'" in response.headers.get("Content-Security-Policy", "")
+    assert "youtube.com" not in response.headers.get("Content-Security-Policy", "")
     assert b'class="skip-link"' in response.data
     assert b'aria-live="polite"' in response.data
     assert b'id="drop-zone"' in response.data
@@ -749,6 +751,89 @@ def test_build_source_preview_returns_none_on_403_or_oversize(tmp_path, monkeypa
     monkeypatch.setattr(application, "YoutubeDL", FatYDL)
     assert application.build_source_preview(job_dir, "labellabel1", "ffmpeg", 100) is None
     assert not (job_dir / "preview-labellabel1.mp3").exists()
+
+
+def test_source_preview_route_serves_cached_clip_for_stored_id(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    job.failed.add(0)
+    job.statuses[0] = {
+        "status": "failed",
+        "index": 0,
+        "job_id": job.job_id,
+        "message": "failed",
+        "can_choose_source": True,
+    }
+    job.source_choices[0] = [{"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201}]
+    builds: list[str] = []
+
+    def fake_build(job_directory, video_id, ffmpeg_path, max_source_bytes):
+        builds.append(video_id)
+        path = application.preview_clip_path(job_directory, video_id)
+        path.write_bytes(b"ID3clip")
+        return path
+
+    monkeypatch.setattr(application, "build_source_preview", fake_build)
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    missing = client.get("/tracks/0/source-previews/unboundxyz1")
+    assert missing.status_code == 404
+    queued = dict(job.statuses[0])
+    job.statuses[0]["status"] = "queued"
+    assert client.get("/tracks/0/source-previews/labellabel1").status_code == 404
+    job.statuses[0] = queued
+    ok = client.get("/tracks/0/source-previews/labellabel1")
+    assert ok.status_code == 200
+    assert ok.mimetype == "audio/mpeg"
+    assert ok.data == b"ID3clip"
+    assert job.files == {}
+    cached = client.get("/tracks/0/source-previews/labellabel1")
+    assert cached.status_code == 200
+    assert builds == ["labellabel1"]
+    assert job.statuses[0]["can_choose_source"] is True
+
+
+def test_source_preview_403_is_404_and_leaves_picker(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    job.failed.add(0)
+    job.statuses[0] = {
+        "status": "failed",
+        "index": 0,
+        "job_id": job.job_id,
+        "message": "failed",
+        "can_choose_source": True,
+    }
+    job.source_choices[0] = [{"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201}]
+    monkeypatch.setattr(application, "build_source_preview", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    assert client.get("/tracks/0/source-previews/labellabel1").status_code == 404
+    assert job.source_choices[0][0]["id"] == "labellabel1"
+    assert job.statuses[0]["can_choose_source"] is True
+    assert job.statuses[0]["status"] == "failed"
+
+
+def test_job_preview_lock_serializes_builders():
+    job = application.Job(job_id="j", directory=Path("."))
+    active = 0
+    max_active = 0
+    gate = threading.Lock()
+
+    def work() -> None:
+        nonlocal active, max_active
+        with job.preview_lock:
+            with gate:
+                active += 1
+                max_active = max(max_active, active)
+            threading.Event().wait(0.05)
+            with gate:
+                active -= 1
+
+    threads = [threading.Thread(target=work) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert max_active == 1
 
 
 def test_two_sessions_cannot_join_or_access_files_or_status(app):
