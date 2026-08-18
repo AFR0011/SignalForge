@@ -1380,7 +1380,12 @@ def download_song_from_youtube(
         "retries": 3,
         "socket_timeout": 30,
         "js_runtimes": {runtime_name: {"path": runtime_path}},
-        "extractor_args": {"youtube": {"player_client": ["default", "ios", "-android_sdkless"]}},
+        # android_vr/ios HTTPS streams 403 without a GVS PO token; web_embedded still serves audio.
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "default", "-android_vr", "-ios", "-android_sdkless"],
+            }
+        },
     }
     download_options = {
         **shared,
