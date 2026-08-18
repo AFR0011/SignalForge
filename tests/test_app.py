@@ -1591,7 +1591,13 @@ def test_source_limit_is_passed_to_ytdlp_and_equality_is_allowed(tmp_path, monke
     assert captured["search_url"].startswith("ytsearch")
     assert "official audio" in captured["search_url"]
     assert captured["queries"][0].startswith("https://www.youtube.com/watch?v=")
-    assert captured["extractor_args"]["youtube"]["player_client"] == ["default", "ios", "-android_sdkless"]
+    assert captured["extractor_args"]["youtube"]["player_client"] == [
+        "web_embedded",
+        "default",
+        "-android_vr",
+        "-ios",
+        "-android_sdkless",
+    ]
     assert callable(captured["match_filter"])
     assert captured["noplaylist"] is True
 
