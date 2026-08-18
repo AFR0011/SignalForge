@@ -83,6 +83,7 @@ class Job:
     reservation_sizes: dict[int, int] = field(default_factory=dict)
     last_activity: float = 0.0
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    preview_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
 class JobAdmissionError(RuntimeError):
@@ -1148,6 +1149,8 @@ YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 PICKER_SOURCE_LIMIT = 9
 SOURCE_THUMB_MAX_BYTES = 200_000
 YOUTUBE_THUMB_HOST = "i.ytimg.com"
+PREVIEW_SECONDS = 30
+PREVIEW_MAX_BYTES = 5_000_000
 
 
 def youtube_video_id(value: str) -> str | None:
@@ -1174,6 +1177,73 @@ def fetch_source_thumbnail(video_id: str, max_bytes: int) -> bytes | None:
         return None
     except (requests.RequestException, ValueError):
         return None
+
+
+def preview_clip_path(job_directory: Path, video_id: str) -> Path:
+    bound = youtube_video_id(video_id)
+    if bound is None:
+        raise ValueError("Invalid YouTube video id")
+    return Path(job_directory) / f"preview-{bound}.mp3"
+
+
+def build_source_preview(
+    job_directory: Path,
+    video_id: str,
+    ffmpeg_path: str,
+    max_source_bytes: int,
+) -> Path | None:
+    bound = youtube_video_id(video_id)
+    if bound is None:
+        return None
+    output_base = Path(job_directory) / f"preview-{bound}"
+    dest = preview_clip_path(job_directory, bound)
+    runtime_name, runtime_path = resolve_js_runtime()
+    options = {
+        "quiet": True,
+        "retries": 3,
+        "socket_timeout": 30,
+        "js_runtimes": {runtime_name: {"path": runtime_path}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "default", "-android_vr", "-ios", "-android_sdkless"],
+            }
+        },
+        "format": "bestaudio/best",
+        "outtmpl": f"{output_base}.%(ext)s",
+        "ffmpeg_location": ffmpeg_path,
+        "max_filesize": max_source_bytes,
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+        "match_filter": undesired_youtube_source,
+        "writethumbnail": False,
+        "noplaylist": True,
+        "download_ranges": lambda _info, _ydl: [{"start_time": 0, "end_time": PREVIEW_SECONDS}],
+    }
+
+    def remove_leftovers() -> None:
+        for leftover in output_base.parent.glob(f"{output_base.name}.*"):
+            try:
+                leftover.unlink(missing_ok=True)
+            except OSError:
+                LOGGER.warning("Could not remove preview leftover %s", leftover.name)
+
+    try:
+        with YoutubeDL(options) as downloader:
+            downloader.download([f"https://www.youtube.com/watch?v={bound}"])
+    except DownloadError:
+        remove_leftovers()
+        return None
+    if not dest.is_file():
+        produced = output_base.with_suffix(".mp3")
+        if produced.is_file() and produced != dest:
+            produced.replace(dest)
+    if not dest.is_file():
+        remove_leftovers()
+        return None
+    if dest.stat().st_size > PREVIEW_MAX_BYTES:
+        dest.unlink(missing_ok=True)
+        remove_leftovers()
+        return None
+    return dest
 
 
 def collect_picker_sources(entries: list[dict[str, Any]], tried_ids: set[str]) -> list[dict[str, Any]]:

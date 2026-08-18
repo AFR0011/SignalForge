@@ -656,6 +656,101 @@ def test_source_thumbnail_allows_only_stored_id(app, client, monkeypatch):
     assert captured["allow_redirects"] is False
 
 
+def test_preview_clip_path_uses_job_dir_and_video_id(tmp_path):
+    path = application.preview_clip_path(tmp_path / "job", "labellabel1")
+    assert path == tmp_path / "job" / "preview-labellabel1.mp3"
+    with pytest.raises(ValueError):
+        application.preview_clip_path(tmp_path / "job", "bad")
+
+
+def test_build_source_preview_writes_bounded_mp3_without_library_or_retain(tmp_path, monkeypatch):
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    library = tmp_path / "library"
+    library.mkdir()
+    captured: dict[str, Any] = {}
+
+    class FakeYDL:
+        def __init__(self, options):
+            captured.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def download(self, queries):
+            captured["queries"] = queries
+            Path(captured["outtmpl"].replace(".%(ext)s", ".mp3")).write_bytes(b"ID3preview")
+
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    monkeypatch.setattr(
+        application,
+        "save_mp3_to_library",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("preview must not save to library")),
+    )
+    result = application.build_source_preview(job_dir, "labellabel1", "ffmpeg", 100)
+    assert result == job_dir / "preview-labellabel1.mp3"
+    assert result.read_bytes() == b"ID3preview"
+    assert captured["queries"] == ["https://www.youtube.com/watch?v=labellabel1"]
+    assert captured["download_ranges"](None, None) == [{"start_time": 0, "end_time": 30}]
+    assert captured["extractor_args"]["youtube"]["player_client"] == [
+        "web_embedded",
+        "default",
+        "-android_vr",
+        "-ios",
+        "-android_sdkless",
+    ]
+    assert captured["noplaylist"] is True
+    assert captured["writethumbnail"] is False
+    assert list(library.iterdir()) == []
+    assert application.PREVIEW_SECONDS == 30
+    assert application.PREVIEW_MAX_BYTES == 5_000_000
+
+
+def test_build_source_preview_returns_none_on_403_or_oversize(tmp_path, monkeypatch):
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+
+    class FailYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def download(self, _queries):
+            raise application.DownloadError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(application, "YoutubeDL", FailYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    assert application.build_source_preview(job_dir, "labellabel1", "ffmpeg", 100) is None
+    assert not (job_dir / "preview-labellabel1.mp3").exists()
+
+    class FatYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def download(self, _queries):
+            path = Path(self.options["outtmpl"].replace(".%(ext)s", ".mp3"))
+            path.write_bytes(b"x" * (application.PREVIEW_MAX_BYTES + 1))
+
+    monkeypatch.setattr(application, "YoutubeDL", FatYDL)
+    assert application.build_source_preview(job_dir, "labellabel1", "ffmpeg", 100) is None
+    assert not (job_dir / "preview-labellabel1.mp3").exists()
+
+
 def test_two_sessions_cannot_join_or_access_files_or_status(app):
     first = app.test_client()
     second = app.test_client()
