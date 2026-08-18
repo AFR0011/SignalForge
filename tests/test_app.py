@@ -195,6 +195,7 @@ def test_render_includes_accessibility_and_local_ui_contract(app, client):
     assert b'id="drop-zone"' in response.data
     assert b'id="source-dialog"' in response.data
     assert b'id="source-dialog-more"' in response.data
+    assert b'id="source-dialog-audio"' in response.data
     assert b"Load more" in response.data
     assert b"Choose a source" in response.data
     assert b"toastify" not in response.data.lower()
@@ -239,6 +240,17 @@ def test_source_dialog_load_more_is_a_non_submit_button():
     assert "source-dialog-more" in js
     css = Path("static/style.css").read_text(encoding="utf-8")
     assert ".source-dialog-actions" in css
+
+
+def test_source_dialog_preview_play_is_a_non_submit_button():
+    html = Path("templates/index.html").read_text(encoding="utf-8")
+    assert 'id="source-dialog-audio"' in html
+    js = Path("static/app.js").read_text(encoding="utf-8")
+    assert "source-previews/" in js
+    assert "Loading preview" in js
+    assert "Preview unavailable" in js
+    css = Path("static/style.css").read_text(encoding="utf-8")
+    assert ".source-card-actions" in css
 
 
 @pytest.mark.parametrize("path", ["/this-path-does-not-exist", "/favicon.ico"])

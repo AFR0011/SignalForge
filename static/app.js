@@ -195,6 +195,7 @@
   const sourceMeta = document.getElementById("source-dialog-meta");
   const sourceCards = document.getElementById("source-dialog-cards");
   const sourceMore = document.getElementById("source-dialog-more");
+  const sourceAudio = document.getElementById("source-dialog-audio");
   const PICKER_PAGE_SIZE = 3;
   let sourceOpener = null;
   let sourceDialogGeneration = 0;
@@ -202,6 +203,7 @@
   let sourceDialogIndex = null;
   let storedSources = [];
   let shownCount = 0;
+  let previewButton = null;
 
   const invalidateSourceDialogFetch = () => {
     sourceDialogGeneration += 1;
@@ -219,6 +221,16 @@
 
   const finalizeSourceDialogClose = () => {
     invalidateSourceDialogFetch();
+    if (sourceAudio) {
+      sourceAudio.pause();
+      sourceAudio.removeAttribute("src");
+      sourceAudio.load();
+    }
+    if (previewButton && previewButton.dataset.previewState !== "unavailable") {
+      previewButton.textContent = "Play";
+      previewButton.disabled = false;
+    }
+    previewButton = null;
     sourceOpener?.focus();
     sourceOpener = null;
   };
@@ -227,7 +239,7 @@
     sourceDialog?.close();
   };
 
-  const sourceCardButtons = () => [...(sourceCards?.querySelectorAll("button") || [])];
+  const sourceCardButtons = () => [...(sourceCards?.querySelectorAll(".button-primary") || [])];
 
   const disableSourceCardButtons = (activeButton) => {
     sourceCardButtons().forEach((btn) => {
@@ -281,7 +293,41 @@
           announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
         }
       });
-      card.append(image, heading, channel, use);
+      const play = document.createElement("button");
+      play.type = "button";
+      play.className = "button button-quiet source-preview";
+      play.textContent = "Play";
+      play.addEventListener("click", () => {
+        if (play.disabled || play.dataset.previewState === "unavailable") return;
+        if (previewButton === play && sourceAudio && !sourceAudio.paused) {
+          sourceAudio.pause();
+          play.textContent = "Play";
+          return;
+        }
+        if (previewButton && previewButton !== play && previewButton.dataset.previewState !== "unavailable") {
+          previewButton.textContent = "Play";
+          previewButton.disabled = false;
+        }
+        previewButton = play;
+        play.textContent = "Loading preview…";
+        if (!sourceAudio) return;
+        sourceAudio.pause();
+        sourceAudio.src = `/tracks/${index}/source-previews/${encodeURIComponent(source.id)}`;
+        const playAttempt = sourceAudio.play();
+        if (playAttempt && typeof playAttempt.then === "function") {
+          playAttempt.then(() => {
+            if (previewButton === play) play.textContent = "Pause";
+          }).catch(() => {
+            play.dataset.previewState = "unavailable";
+            play.textContent = "Preview unavailable";
+            play.disabled = true;
+          });
+        }
+      });
+      const actions = document.createElement("div");
+      actions.className = "source-card-actions";
+      actions.append(play, use);
+      card.append(image, heading, channel, actions);
       sourceCards?.append(card);
     });
   };
@@ -344,6 +390,22 @@
     event.preventDefault();
     if (sourceDialogIndex == null || sourceMore.hidden) return;
     renderNextSourcePage(sourceDialogIndex);
+  });
+  sourceAudio?.addEventListener("error", () => {
+    if (!previewButton) return;
+    previewButton.dataset.previewState = "unavailable";
+    previewButton.textContent = "Preview unavailable";
+    previewButton.disabled = true;
+  });
+  sourceAudio?.addEventListener("pause", () => {
+    if (!previewButton || previewButton.dataset.previewState === "unavailable") return;
+    if (previewButton.textContent === "Loading preview…") return;
+    if (sourceAudio.paused) previewButton.textContent = "Play";
+  });
+  sourceAudio?.addEventListener("playing", () => {
+    if (previewButton && previewButton.dataset.previewState !== "unavailable") {
+      previewButton.textContent = "Pause";
+    }
   });
   sourceDialog?.addEventListener("close", finalizeSourceDialogClose);
   sourceDialog?.addEventListener("click", (event) => {

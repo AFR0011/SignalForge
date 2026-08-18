@@ -310,7 +310,8 @@ tr[data-state="failed"] .status-badge i { background: var(--danger); }
 .source-card img { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; background: #0d1011; }
 .source-card h3 { margin: 0; color: var(--ink); font-size: .92rem; }
 .source-card p { margin: 0; color: var(--muted); font-size: .78rem; }
-.source-card .button { grid-column: 2; justify-self: start; }
+.source-card-actions { grid-column: 2; display: flex; gap: 8px; flex-wrap: wrap; }
+#source-dialog-audio { display: none; }
 #source-dialog { border: 1px solid var(--line); border-radius: 16px; background: #121516; color: var(--ink); }
 #source-dialog::backdrop { background: rgb(0 0 0 / 55%); }
 
