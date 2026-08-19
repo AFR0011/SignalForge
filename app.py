@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -46,6 +47,7 @@ from mutagen.id3 import APIC, ID3, error
 from mutagen.mp3 import MP3
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from yt_dlp import DownloadError, YoutubeDL
+from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
 
 
 LOGGER = logging.getLogger(__name__)
@@ -83,6 +85,7 @@ class Job:
     reservation_sizes: dict[int, int] = field(default_factory=dict)
     last_activity: float = 0.0
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    preview_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
 class JobAdmissionError(RuntimeError):
@@ -1145,15 +1148,170 @@ def youtube_watch_url(entry: dict[str, Any]) -> str | None:
 
 
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+PASTE_URL_MAX_CHARS = 500
+PASTE_INVALID_MESSAGE = "Paste a Spotify track link or a YouTube video link."
+_SPOTIFY_TRACK_ID_RE = re.compile(r"^[A-Za-z0-9]{10,32}$")
+_YOUTUBE_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+}
 PICKER_SOURCE_LIMIT = 9
 SOURCE_THUMB_MAX_BYTES = 200_000
 YOUTUBE_THUMB_HOST = "i.ytimg.com"
+PREVIEW_SECONDS = 30
+PREVIEW_MAX_BYTES = 5_000_000
 
 
 def youtube_video_id(value: str) -> str | None:
     if isinstance(value, str) and YOUTUBE_VIDEO_ID_RE.fullmatch(value):
         return value
     return None
+
+
+def parse_pasted_source_url(value: str) -> dict[str, str] | None:
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw or len(raw) > PASTE_URL_MAX_CHARS:
+        return None
+    if raw.lower().startswith("spotify:track:"):
+        track_id = raw.split(":", 2)[-1].split("?")[0].strip()
+        if _SPOTIFY_TRACK_ID_RE.fullmatch(track_id):
+            return {"kind": "spotify", "url": f"https://open.spotify.com/track/{track_id}"}
+        return None
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = youtube_video_id(path.strip("/").split("/")[0] if path.strip("/") else "")
+        if video_id is not None:
+            return {"kind": "youtube", "id": video_id}
+        return None
+    if host in _YOUTUBE_HOSTS:
+        parts = [part for part in path.split("/") if part]
+        query = parsed.query
+        video_id = None
+        if parts[:1] == ["watch"] or path.endswith("/watch"):
+            match = re.search(r"(?:^|&)v=([A-Za-z0-9_-]{11})(?:&|$)", f"&{query}&")
+            if match:
+                video_id = youtube_video_id(match.group(1))
+        elif len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"}:
+            video_id = youtube_video_id(parts[1])
+        if video_id is not None:
+            return {"kind": "youtube", "id": video_id}
+        return None
+    if host == "open.spotify.com":
+        parts = [part for part in path.split("/") if part]
+        if parts and parts[0].startswith("intl-"):
+            parts = parts[1:]
+        if len(parts) >= 2 and parts[0] == "track":
+            track_id = parts[1].split("?")[0]
+            if _SPOTIFY_TRACK_ID_RE.fullmatch(track_id):
+                return {"kind": "spotify", "url": f"https://open.spotify.com/track/{track_id}"}
+        return None
+    return None
+
+
+def merge_pasted_youtube_choice(choices: list[dict[str, Any]], card: dict[str, Any]) -> list[dict[str, Any]]:
+    video_id = youtube_video_id(str(card.get("id") or ""))
+    if video_id is None:
+        return list(choices)
+    pasted = {**card, "id": video_id, "pasted": True}
+    rest = [item for item in choices if item.get("id") != video_id]
+    return [pasted, *rest][:PICKER_SOURCE_LIMIT]
+
+
+def fetch_youtube_paste_card(video_id: str) -> dict[str, Any]:
+    bound = youtube_video_id(video_id)
+    fallback = {"id": bound or "", "title": "YouTube video", "channel": "", "duration": None, "pasted": True}
+    if bound is None:
+        return fallback
+    runtime_name, runtime_path = resolve_js_runtime()
+    options = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "js_runtimes": {runtime_name: {"path": runtime_path}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "default", "-android_vr", "-ios", "-android_sdkless"],
+            }
+        },
+    }
+    try:
+        with YoutubeDL(options) as downloader:
+            info = downloader.extract_info(f"https://www.youtube.com/watch?v={bound}", download=False) or {}
+    except DownloadError:
+        return fallback
+    duration = info.get("duration")
+    duration_value = int(duration) if isinstance(duration, (int, float)) and not isinstance(duration, bool) else None
+    return {
+        "id": bound,
+        "title": str(info.get("title") or "YouTube video"),
+        "channel": str(info.get("uploader") or info.get("channel") or ""),
+        "duration": duration_value,
+        "pasted": True,
+    }
+
+
+def _spotify_title_artist(payload: dict[str, Any]) -> tuple[str, str] | None:
+    title = str(payload.get("title") or "").strip()
+    artist = str(payload.get("author_name") or "").strip()
+    if not artist:
+        for separator in (" - ", " by "):
+            if separator in title:
+                title, artist = (part.strip() for part in title.rsplit(separator, 1))
+                break
+    if not title:
+        return None
+    return title, artist
+
+
+def fetch_spotify_picker_sources(track_url: str, max_bytes: int) -> list[dict[str, Any]] | None:
+    try:
+        response = requests.get(
+            "https://open.spotify.com/oembed",
+            params={"url": track_url},
+            timeout=(3.05, 8),
+            stream=True,
+            allow_redirects=False,
+        )
+        if response.status_code != 200:
+            return None
+        host = urlparse(response.url).hostname
+        if host != "open.spotify.com":
+            return None
+        data = json.loads(_read_limited_response(response, max_bytes))
+        if not isinstance(data, dict):
+            return None
+        parsed = _spotify_title_artist(data)
+        if parsed is None:
+            return None
+        title, artist = parsed
+    except (requests.RequestException, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    runtime_name, runtime_path = resolve_js_runtime()
+    search_url = f"ytsearch{YOUTUBE_SEARCH_RESULTS}:{build_youtube_search_query(artist, title)}"
+    with YoutubeDL({
+        "quiet": True,
+        "extract_flat": True,
+        "skip_download": True,
+        "js_runtimes": {runtime_name: {"path": runtime_path}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "default", "-android_vr", "-ios", "-android_sdkless"],
+            }
+        },
+    }) as explorer:
+        listing = explorer.extract_info(search_url, download=False) or {}
+    entries = [entry for entry in listing.get("entries") or [] if isinstance(entry, dict)]
+    return collect_picker_sources(entries, set())
 
 
 def fetch_source_thumbnail(video_id: str, max_bytes: int) -> bytes | None:
@@ -1174,6 +1332,79 @@ def fetch_source_thumbnail(video_id: str, max_bytes: int) -> bytes | None:
         return None
     except (requests.RequestException, ValueError):
         return None
+
+
+def preview_clip_path(job_directory: Path, video_id: str) -> Path:
+    bound = youtube_video_id(video_id)
+    if bound is None:
+        raise ValueError("Invalid YouTube video id")
+    return Path(job_directory) / f"preview-{bound}.mp3"
+
+
+def build_source_preview(
+    job_directory: Path,
+    video_id: str,
+    ffmpeg_path: str,
+    max_source_bytes: int,
+    skip_match_filter: bool = False,
+) -> Path | None:
+    bound = youtube_video_id(video_id)
+    if bound is None:
+        return None
+    output_base = Path(job_directory) / f"preview-{bound}"
+    dest = preview_clip_path(job_directory, bound)
+    runtime_name, runtime_path = resolve_js_runtime()
+    options = {
+        "quiet": True,
+        "retries": 3,
+        "socket_timeout": 30,
+        "js_runtimes": {runtime_name: {"path": runtime_path}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "default", "-android_vr", "-ios", "-android_sdkless"],
+            }
+        },
+        "format": "bestaudio/best",
+        "outtmpl": f"{output_base}.%(ext)s",
+        "ffmpeg_location": ffmpeg_path,
+        "max_filesize": max_source_bytes,
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+        "match_filter": undesired_youtube_source,
+        "writethumbnail": False,
+        "noplaylist": True,
+        "download_ranges": lambda _info, _ydl: [{"start_time": 0, "end_time": PREVIEW_SECONDS}],
+    }
+    if skip_match_filter:
+        options.pop("match_filter", None)
+
+    def remove_leftovers() -> None:
+        for leftover in output_base.parent.glob(f"{output_base.name}.*"):
+            try:
+                leftover.unlink(missing_ok=True)
+            except OSError:
+                LOGGER.warning("Could not remove preview leftover %s", leftover.name)
+
+    token = FFmpegPostProcessor._ffmpeg_location.set(ffmpeg_path)
+    try:
+        with YoutubeDL(options) as downloader:
+            downloader.download([f"https://www.youtube.com/watch?v={bound}"])
+    except DownloadError:
+        remove_leftovers()
+        return None
+    finally:
+        FFmpegPostProcessor._ffmpeg_location.reset(token)
+    if not dest.is_file():
+        produced = output_base.with_suffix(".mp3")
+        if produced.is_file() and produced != dest:
+            produced.replace(dest)
+    if not dest.is_file():
+        remove_leftovers()
+        return None
+    if dest.stat().st_size > PREVIEW_MAX_BYTES:
+        dest.unlink(missing_ok=True)
+        remove_leftovers()
+        return None
+    return dest
 
 
 def collect_picker_sources(entries: list[dict[str, Any]], tried_ids: set[str]) -> list[dict[str, Any]]:
@@ -1355,6 +1586,7 @@ def download_song_from_youtube(
     watch_url: str = "",
     picker_out: list[dict[str, Any]] | None = None,
     picker_filled: list[bool] | None = None,
+    skip_match_filter: bool = False,
 ) -> None:
     def progress_hook(data: dict[str, Any]) -> None:
         for key in ("total_bytes", "total_bytes_estimate", "downloaded_bytes"):
@@ -1399,6 +1631,8 @@ def download_song_from_youtube(
         "writethumbnail": True,
         "noplaylist": True,
     }
+    if skip_match_filter:
+        download_options.pop("match_filter", None)
 
     def remove_leftovers() -> None:
         for leftover in output_base.parent.glob(f"{output_base.name}.*"):
@@ -1514,7 +1748,13 @@ def process_song(
 
     with job.lock:
         forced_id = job.forced_sources.pop(index, "")
-        if not forced_id:
+        skip_match_filter = False
+        if forced_id:
+            for item in job.source_choices.get(index) or []:
+                if item.get("id") == forced_id and item.get("pasted"):
+                    skip_match_filter = True
+                    break
+        else:
             job.source_choices.pop(index, None)
     watch = f"https://www.youtube.com/watch?v={forced_id}" if youtube_video_id(forced_id) else ""
     picker_out: list[dict[str, Any]] = []
@@ -1548,6 +1788,7 @@ def process_song(
                     watch_url=watch,
                     picker_out=picker_out,
                     picker_filled=picker_filled,
+                    skip_match_filter=skip_match_filter,
                 )
                 tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
             actual_bytes = filepath.stat().st_size
@@ -1614,21 +1855,16 @@ def process_song(
                         job.source_choices[index] = remaining
                     else:
                         job.source_choices.pop(index, None)
-                can_choose = bool(job.source_choices.get(index))
+                can_choose = True
             elif picker_out:
                 job.source_choices[index] = list(picker_out)
-                can_choose = bool(job.source_choices.get(index))
+                can_choose = True
             else:
-                job.source_choices.pop(index, None)
-                can_choose = False
+                can_choose = True
         if keep_outputs:
             message = str(exc) or "Could not save the file to the library folder."
-        elif can_choose:
-            message = "Download failed. You can retry this track or choose a source."
-        elif picker_filled[0] or (forced_id and "403" in str(exc)):
-            message = "Download failed. No alternate sources found."
         else:
-            message = "Download failed. You can retry this track."
+            message = "Download failed. You can retry this track or choose a source."
         extra: dict[str, Any] = {"can_choose_source": can_choose}
         if download_url:
             extra["download_url"] = download_url
@@ -1794,7 +2030,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:",
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self' ws: wss:",
         )
         return response
 
@@ -2041,6 +2277,47 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return jsonify(error=str(exc)), 409
         return jsonify(job_id=job.job_id, started=started), 202
 
+    @flask_app.route("/paste-source", methods=["POST"])
+    @limiter.limit("20 per minute")
+    def paste_source() -> Any:
+        job, error_response = mutation_job()
+        if error_response:
+            return error_response
+        assert job is not None
+        payload = request.get_json(silent=True) or {}
+        try:
+            index = int(payload.get("index"))
+        except (TypeError, ValueError):
+            return jsonify(error="Selection is invalid"), 400
+        raw_url = payload.get("url")
+        parsed = parse_pasted_source_url(str(raw_url if isinstance(raw_url, str) else ""))
+        if parsed is None:
+            return jsonify(error=PASTE_INVALID_MESSAGE), 400
+        with job.lock:
+            if not failed_track_locked(job, index):
+                return jsonify(error="Choose a source only for a failed track"), 409
+        if parsed["kind"] == "youtube":
+            card = fetch_youtube_paste_card(parsed["id"])
+            with job.lock:
+                if not failed_track_locked(job, index):
+                    return jsonify(error="Choose a source only for a failed track"), 409
+                updated = merge_pasted_youtube_choice(list(job.source_choices.get(index) or []), card)
+                job.source_choices[index] = updated
+                sources = list(updated)
+            return jsonify(sources=sources)
+        max_bytes = min(SOURCE_THUMB_MAX_BYTES, int(flask_app.config["ARTWORK_MAX_BYTES"]))
+        fetched = fetch_spotify_picker_sources(parsed["url"], max_bytes)
+        if fetched is None:
+            return jsonify(error="Could not read that Spotify link."), 409
+        if not fetched:
+            return jsonify(error="No YouTube matches for that Spotify track."), 409
+        with job.lock:
+            if not failed_track_locked(job, index):
+                return jsonify(error="Choose a source only for a failed track"), 409
+            job.source_choices[index] = list(fetched)
+            sources = list(fetched)
+        return jsonify(sources=sources)
+
     @flask_app.route("/tracks/<int:index>/source-thumbs/<video_id>", methods=["GET"])
     @limiter.limit("60 per minute")
     def track_source_thumb(index: int, video_id: str) -> Any:
@@ -2058,6 +2335,39 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if not image:
             return jsonify(error="File not found"), 404
         return flask_app.response_class(image, mimetype="image/jpeg")
+
+    @flask_app.route("/tracks/<int:index>/source-previews/<video_id>", methods=["GET"])
+    @limiter.limit("60 per minute")
+    def track_source_preview(index: int, video_id: str) -> Any:
+        job = owned_job()
+        if job is None:
+            return jsonify(error="File not found"), 404
+        bound = youtube_video_id(video_id)
+        with job.lock:
+            stored = list(job.source_choices.get(index) or [])
+            allowed = {item.get("id") for item in stored}
+            if not failed_track_locked(job, index) or bound is None or bound not in allowed:
+                return jsonify(error="File not found"), 404
+            skip_match_filter = any(item.get("id") == bound and item.get("pasted") for item in stored)
+        with job.preview_lock:
+            cached = preview_clip_path(job.directory, bound)
+            if cached.is_file() and 0 < cached.stat().st_size <= PREVIEW_MAX_BYTES:
+                payload = cached.read_bytes()
+            else:
+                built = build_source_preview(
+                    job.directory,
+                    bound,
+                    resolve_ffmpeg(flask_app.config.get("FFMPEG_PATH")),
+                    int(flask_app.config["MAX_SOURCE_BYTES"]),
+                    skip_match_filter=skip_match_filter,
+                )
+                if built is None or not built.is_file():
+                    return jsonify(error="File not found"), 404
+                if built.stat().st_size > PREVIEW_MAX_BYTES:
+                    built.unlink(missing_ok=True)
+                    return jsonify(error="File not found"), 404
+                payload = built.read_bytes()
+        return flask_app.response_class(payload, mimetype="audio/mpeg")
 
     @flask_app.route("/library-root", methods=["POST"])
     @limiter.limit("20 per minute")

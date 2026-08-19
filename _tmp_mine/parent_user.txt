@@ -1,0 +1,907 @@
+--- LINE 1 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 12:21 PM (UTC+3)</timestamp>
+<user_query>
+I'm running into errors when trying to download the songs, could you identify the issue and propose a fix?
+    ctx.data = self.ydl.urlopen(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 4305, in urlopen
+    return self._request_director.send(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\common.py", line 117, in send
+    response = handler.send(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\_helper.py", line 194, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\common.py", line 359, in send
+    return self._send(request)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\_requests.py", line 361, in _send
+    raise HTTPError(res, redirect_loop=max_redirects_exceeded)
+yt_dlp.networking.exceptions.HTTPError: HTTP Error 403: Forbidden
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 946, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 882, in download_song_from_youtube
+    downloader.download([f"ytsearch1:{query}"])
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3715, in download
+    self.__download_wrapper(self.extract_info)(
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3688, in wrapper
+    res = func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1721, in extract_info
+    return self.__extract_info(url, self.get_info_extractor(key), download, extra_info, process)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1732, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1888, in __extract_info
+    return self.process_ie_result(ie_result, download, extra_info)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 2017, in process_ie_result
+    return self.__process_playlist(ie_result, download)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 2170, in __process_playlist
+    entry_result = self.__process_iterable_entry(entry, download, collections.ChainMap({
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1732, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 2202, in __process_iterable_entry
+    return self.process_ie_result(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1967, in process_ie_result
+    return self.extract_info(
+           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1721, in extract_info
+    return self.__extract_info(url, self.get_info_extractor(key), download, extra_info, process)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1732, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1888, in __extract_info
+    return self.process_ie_result(ie_result, download, extra_info)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1947, in process_ie_result
+    ie_result = self.process_video_result(ie_result, download=download)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3135, in process_video_result
+    self.process_info(new_info)
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 195, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3598, in process_info
+    self.report_error(f'unable to download video data: {err}')
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1166, in report_error
+    self.trouble(f'{self._format_err("ERROR:", self.Styles.ERROR)} {message}', *args, **kwargs)
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1104, in trouble
+    raise DownloadError(message, exc_info)
+yt_dlp.utils.DownloadError: ERROR: unable to download video data: HTTP Error 403: Forbidden
+PS C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge> ^C
+PS C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge> python app.py
+2026-08-14 12:20:12,014 [WARNING] SECRET_KEY is not configured; using an ephemeral development key. Sessions will reset when the process restarts.
+ * Serving Flask app 'app'
+ * Debug mode: off
+2026-08-14 12:20:12,082 [INFO] WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+2026-08-14 12:20:12,082 [INFO] Press CTRL+C to quit
+2026-08-14 12:20:13,103 [ERROR] Exception on /favicon.ico [GET]
+Traceback (most recent call last):
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 920, in full_dispatch_request
+    return self.finalize_request(rv)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 939, in finalize_request
+    response = self.make_response(rv)
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 1249, in make_response
+    raise TypeError(
+TypeError: The view function did not return a valid response. The return type must be a string, dict, list, tuple with headers or status, Response instance, or WSGI callable, but it was a tuple.
+2026-08-14 12:20:13,106 [INFO] 127.0.0.1 - - [14/Aug/2026 12:20:13] "GET /favicon.ico HTTP/1.1" 500 -
+2026-08-14 12:20:13,728 [INFO] 127.0.0.1 - - [14/Aug/2026 12:20:13] "GET / HTTP/1.1" 200 
+
+--- LINE 12 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 12:31 PM (UTC+3)</timestamp>
+<user_query>
+Could you create fix these issues? I installed Deno using winget.
+</user_query>
+text
+
+--- LINE 19 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 12:34 PM (UTC+3)</timestamp>
+<user_query>
+Fix YouTube 403 and client errors
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+</user_query>
+text
+
+--- LINE 43 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 12:45 PM (UTC+3)</timestamp>
+<user_query>
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+</user_query>
+text
+
+--- LINE 44 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 12:45 PM (UTC+3)</timestamp>
+<user_query>
+Deno is not on path apparently...
+43:33] "GET /static/app.js HTTP/1.1" 304 -
+2026-08-14 12:43:45,864 [INFO] 127.0.0.1 - - [14/Aug/2026 12:43:45] "POST /download HTTP/1.1" 202 -
+2026-08-14 12:43:45,978 [ERROR] Job RV7rUeh4SwwP2h4Jmr5OcAe3pIfwMiGeJdxFf2DCdD0 track 1 failed
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 970, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 890, in download_song_from_youtube
+    runtime_name, runtime_path = resolve_js_runtime()
+                                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 788, in resolve_js_runtime
+    raise RuntimeError(
+RuntimeError: No JavaScript runtime found for YouTube downloads. Install deno and ensure it is on PATH, or set YTDLP_JS_RUNTIME_PATH.
+2026-08-14 12:43:45,982 [ERROR] Job RV7rUeh4SwwP2h4Jmr5OcAe3pIfwMiGeJdxFf2DCdD0 track 0 failed
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 970, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 890, in download_song_from_youtube
+    runtime_name, runtime_path = resolve_js_runtime()
+                                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 788, in resolve_js_runtime
+    raise RuntimeError(
+RuntimeError: No JavaScript runtime found for YouTube downloads. Install deno and ensure it is on PATH, or set YTDLP_JS_RUNTIME_PATH.
+and I don't know where it's installed...
+</user_query>
+text
+
+--- LINE 52 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 12:53 PM (UTC+3)</timestamp>
+<user_query>
+Ok two things:
+1. The download failed for one song "Till I Collapse	Eminem, Nate Dogg	The Eminem Show" with the same error as before, but succeeded with another one.
+2. Could we add artwork to the song mp3 metadata after they're downloaded as well, and avoid "clean/non-explicit" versions, as well as getting audio from "music videos" since we're only interested in the songs?
+PS C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge> python app.py
+2026-08-14 12:49:17,480 [WARNING] SECRET_KEY is not configured; using an ephemeral development key. Sessions will reset when the process restarts.
+ * Serving Flask app 'app'
+ * Debug mode: off
+2026-08-14 12:49:17,552 [INFO] WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+2026-08-14 12:49:17,552 [INFO] Press CTRL+C to quit
+2026-08-14 12:49:20,769 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:20] "GET / HTTP/1.1" 200 -
+2026-08-14 12:49:20,936 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:20] "GET /static/socket.io.min.js HTTP/1.1" 304 -
+2026-08-14 12:49:20,937 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:20] "GET /static/style.css HTTP/1.1" 304 -
+2026-08-14 12:49:20,938 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:20] "GET /static/app.js HTTP/1.1" 304 -
+2026-08-14 12:49:30,455 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:30] "POST /upload HTTP/1.1" 200 -
+2026-08-14 12:49:30,540 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:30] "GET /static/style.css HTTP/1.1" 304 -
+2026-08-14 12:49:30,541 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:30] "GET /static/socket.io.min.js HTTP/1.1" 304 -
+2026-08-14 12:49:30,542 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:30] "GET /static/app.js HTTP/1.1" 304 -
+2026-08-14 12:49:37,157 [INFO] 127.0.0.1 - - [14/Aug/2026 12:49:37] "POST /download HTTP/1.1" 202 -
+ERROR: unable to download video data: HTTP Error 403: Forbidden 
+2026-08-14 12:49:40,175 [ERROR] Job l3o0NtKw6WanZFXZjxdtCwuclZKZjuZtSu361Hz4bGI track 0 failed
+Traceback (most recent call last):
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3589, in process_info
+    success, real_download = self.dl(temp_filename, info_dict)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3324, in dl
+    return fd.download(name, new_info, subtitle)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\downloader\common.py", line 480, in download
+    ret = self.real_download(filename, info_dict)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\downloader\http.py", line 362, in real_download
+    establish_connection()
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\downloader\http.py", line 119, in establish_connection
+    ctx.data = self.ydl.urlopen(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 4305, in urlopen
+    return self._request_director.send(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\common.py", line 117, in send
+    response = handler.send(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\_helper.py", line 194, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\common.py", line 359, in send
+    return self._send(request)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\_requests.py", line 361, in _send
+    raise HTTPError(res, redirect_loop=max_redirects_exceeded)
+yt_dlp.networking.exceptions.HTTPError: HTTP Error 403: Forbidden
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 996, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 932, in download_song_from_youtube
+    downloader.download([f"ytsearch1:{query}"])
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3715, in download
+    self.__download_wrapper(self.extract_info)(
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3688, in wrapper
+    res = func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1721, in extract_info
+    return self.__extract_info(url, self.get_info_extractor(key), download, extra_info, process)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1732, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1888, in __extract_info
+    return self.process_ie_result(ie_result, download, extra_info)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 2017, in process_ie_result
+    return self.__process_playlist(ie_result, download)      
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^      
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 2170, in __process_playlist
+    entry_result = self.__process_iterable_entry(entry, download, collections.ChainMap({
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1732, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 2202, in __process_iterable_entry
+    return self.process_ie_result(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1967, in process_ie_result
+    return self.extract_info(
+           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1721, in extract_info
+    return self.__extract_info(url, self.get_info_extractor(key), download, extra_info, process)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1732, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1888, in __extract_info
+    return self.process_ie_result(ie_result, download, extra_info)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1947, in process_ie_result
+    ie_result = self.process_video_result(ie_result, download=download)
+
+--- LINE 69 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 1:06 PM (UTC+3)</timestamp>
+<user_query>
+Ok artwork is still not there, and there are bigger issues: one of the songs that was downloaded seems to be a parody of the beautiful pain song by eminem but somebody else's lytics and song, just the same beat, and another one is a different song completely "no apologies by eminem" actually downloaded "no love by lil wayne and eminem", and lucky you" now downloaded an 8D or something version.
+</user_query>
+text
+
+--- LINE 84 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 1:23 PM (UTC+3)</timestamp>
+<user_query>
+Beautiful Pain is still fetching the same other artist song, Also, no apologies now downloaded a 20-second preview somehow. And natural by imagine dragons downloaded a weird version also which starts in the middle of the song and is without beats/less beats with a weird metronome sound. could you trace the searches and figure out what it's downloading and why?
+</user_query>
+text
+
+--- LINE 94 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 1:23 PM (UTC+3)</timestamp>
+<user_query>
+Beautiful Pain is still fetching the same other artist song, Also, no apologies now downloaded a 20-second preview somehow. And natural by imagine dragons downloaded a weird version also which starts in the middle of the song and is without beats/less beats with a weird metronome sound. could you trace the searches and figure out what it's downloading and why?
+</user_query>
+text
+
+--- LINE 108 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 1:44 PM (UTC+3)</timestamp>
+<user_query>
+8 mile downloaded a 12 minute video from the movie 8 mile, not the song itself. and a few of the songs failed, could you figure out why?
+	Gangsta's Paradise	Coolio, L.V.	Gangsta's Paradise	
+Download failed. You can retry this track.
+	Never Enough (feat. Drowsy)	Ekoh, Drowsy	The De2our	
+Download failed. You can retry this track.
+	Turn The Music Up	NF	Mansion	
+Download failed. You can retry this track.
+Rabbit Run	Eminem	8 Mile	
+Download failed. You can retry this track.
+	Homicide	Logic, Eminem	Homicide	
+Download failed. You can retry this track.
+/files/0008-infinite-eminem.mp3 HTTP/1.1" 200 -
+2026-08-14 13:41:39,107 [INFO] 127.0.0.1 - - [14/Aug/2026 13:41:39] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0009-natural-imagine-dragons.mp3 HTTP/1.1" 200 -      
+2026-08-14 13:41:49,069 [INFO] 127.0.0.1 - - [14/Aug/2026 13:41:49] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0011-godzilla-eminem-juice-wrld.mp3 HTTP/1.1" 200 -   
+2026-08-14 13:41:57,568 [INFO] 127.0.0.1 - - [14/Aug/2026 13:41:57] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0012-leaving-heaven-eminem-skylar-grey.mp3 HTTP/1.1" 200 -
+2026-08-14 13:42:02,804 [INFO] 127.0.0.1 - - [14/Aug/2026 13:42:02] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0013-8-mile-eminem.mp3 HTTP/1.1" 200 -
+2026-08-14 13:42:49,475 [INFO] 127.0.0.1 - - [14/Aug/2026 13:42:49] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0014-kings-never-die-eminem-gwen-stefani.mp3 HTTP/1.1" 200 -
+2026-08-14 13:42:55,547 [INFO] 127.0.0.1 - - [14/Aug/2026 13:42:55] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0015-phenomenal-eminem.mp3 HTTP/1.1" 200 -
+2026-08-14 13:43:06,485 [INFO] 127.0.0.1 - - [14/Aug/2026 13:43:06] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0016-psychopath-killer-slaughterhouse-yelawolf-eminem.mp3 HTTP/1.1" 200 -
+2026-08-14 13:43:14,922 [INFO] 127.0.0.1 - - [14/Aug/2026 13:43:14] "GET /jobs/EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU/files/0017-edge-of-the-earth-thirty-seconds-to-mars.mp3 HTTP/1.1" 200 -
+2026-08-14 13:44:09,198 [INFO] 127.0.0.1 - - [14/Aug/2026 13:44:09] "POST /retry-failed HTTP/1.1" 202 -
+2026-08-14 13:44:10,650 [ERROR] Job EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU track 6 failed
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1249, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1151, in download_song_from_youtube
+    raise DownloadError("No matching audio source found")    
+yt_dlp.utils.DownloadError: No matching audio source found   
+ERROR: unable to download video data: HTTP Error 403: Forbidden
+2026-08-14 13:44:12,893 [ERROR] Job EUTftzY7dy1dmEgE9lLGhMzova6HCQiBgqfOWITvbCU track 9 failed
+Traceback (most recent call last):
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3589, in process_info
+    success, real_download = self.dl(temp_filename, info_dict)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3324, in dl   
+    return fd.download(name, new_info, subtitle)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\downloader\common.py", line 480, in download
+    ret = self.real_download(filename, info_dict)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\downloader\http.py", line 362, inreal_download
+    establish_connection()
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\downloader\http.py", line 119, inestablish_connection
+    ctx.data = self.ydl.urlopen(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 4305, in urlopen
+    return self._request_director.send(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\common.py", line 117, in send
+    response = handler.send(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\_helper.py", line 194,in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\common.py", line 359, in send
+    return self._send(request)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\networking\_requests.py", line 361, in _send
+    raise HTTPError(res, redirect_loop=max_redirects_exceeded)
+yt_dlp.networking.exceptions.HTTPError: HTTP Error 403: Forbidden
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1249, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1188, in download_song_from_youtube
+    raise last_error
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1173, in download_song_from_youtube
+    downloader.download([watch_url])
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3715, in download
+    self.__download_wrapper(self.extract_info)(
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3688, in wrapper
+    res = func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1721, in extract_info
+    return self.__extract_info(url, self.get_info_extractor(key), download, extra_info, process)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1732, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1888, in __extract_info
+    return self.process_ie_result(ie_result, download, extra_info)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1947, in process_ie_result
+    ie_result = self.process_video_result(ie_result, download=download)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3135, in process_video_result
+    self.process_info(new_info)
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 195, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 3598, in process_info
+    self.report_error(f'unable to download video data: {err}')
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1166, in report_error
+    self.trouble(f'{self._format_err("ERROR:", self.Styles.ERROR)} {message}', *args, **kwargs)
+  File "C:\Users\farro\AppData\Local\Programs\Python\Python312\Lib\site-packages\yt_dlp\YoutubeDL.py", line 1104, in trouble
+  
+
+--- LINE 125 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:08 PM (UTC+3)</timestamp>
+<user_query>
+I was thinking, for one like Gangsta'a paradise and rabbit run where youtube 403's the download and there are no other candidates, we could maybe present a selection to the user (like add a button where download would be when one of them fails, which then shows a popup with the highest confidence three youtube link previews (title, channel, artwork/thumbnail, etc.) that the user can select from in order to download the thing from there.) What do you think?
+</user_query>
+text
+
+--- LINE 129 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:13 PM (UTC+3)</timestamp>
+<user_query>
+a
+</user_query>
+text
+
+--- LINE 132 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:13 PM (UTC+3)</timestamp>
+<user_query>
+Run the `continual-learning` skill now. Use the `agents-memory-updater` subagent for the full memory update flow. Use incremental transcript processing with index file `C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\.cursor\hooks\state\continual-learning-index.json`: only consider transcripts not in the index or transcripts whose mtime is newer than indexed mtime. Have the subagent refresh index mtimes, remove entries for deleted transcripts, and update `AGENTS.md` only for high-signal recurring user corrections and durable workspace facts. Exclude one-off/transient details and secrets. If no meaningful updates exist, respond exactly: No high-signal memory updates.
+</user_query>
+text
+
+--- LINE 138 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:20 PM (UTC+3)</timestamp>
+<user_query>
+```chat_selection
+agent_id: a521cd48-1cfe-4072-9d1e-5c5b65c9a815
+composer_id: a521cd48-1cfe-4072-9d1e-5c5b65c9a815
+selected_text:
+Choose source only appears after automatic download fails. Start selected and Retry failed stay as they are.
+
+On a failed row, the file cell that currently goes empty gets a Choose source button. Clicking it opens a dialog for that track only: song and artist at the top, then three YouTube results as cards (thumbnail, title, channel, duration). One Use this source control per card, plus Close. No YouTube player embed.
+
+Those three cards are not limited to sources the matcher already approved. Auto-download already burned the approved URL (or found none). The list is the best remaining search hits, including label channels, lyric videos, and soundtrack uploads that scoring skipped. If YouTube returns fewer than three usable rows, the dialog shows fewer. If it returns none, the button stays disabled and the status text says no alternatives were found.
+
+Thumbnails stay on this origin. The page CSP only allows img-src 'self' data:, so the app would serve a small thumbnail for a video id already attached to that failed track, rather than loading i.ytimg.com in the browser.
+
+Does that trigger and dialog shape look right?
+```
+ Sounds good.
+</user_query>
+text
+
+--- LINE 141 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:24 PM (UTC+3)</timestamp>
+<user_query>
+Yes.
+</user_query>
+text
+
+--- LINE 144 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:25 PM (UTC+3)</timestamp>
+<user_query>
+Good
+</user_query>
+text
+
+--- LINE 146 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:26 PM (UTC+3)</timestamp>
+<user_query>
+Yes
+</user_query>
+text
+
+--- LINE 154 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:30 PM (UTC+3)</timestamp>
+<user_query>
+Looks good, create an implementation plan.
+</user_query>
+text
+
+--- LINE 163 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:35 PM (UTC+3)</timestamp>
+<user_query>
+subagents.
+</user_query>
+text
+
+--- LINE 220 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 2:35 PM (UTC+3)</timestamp>
+<user_query>
+subagents.
+</user_query>
+text
+
+--- LINE 249 role=user ---
+user
+<timestamp>Friday, Aug 14, 2026, 5:01 PM (UTC+3)</timestamp>
+<user_query>
+Made PR and merged, but one test case failed:
+...F.................................................................... [ 87%]
+..........                                                               [100%]
+=================================== FAILURES ===================================
+___________ test_render_includes_accessibility_and_local_ui_contract ___________
+
+app = <Flask 'app'>, client = <FlaskClient <Flask 'app'>>
+
+    def test_render_includes_accessibility_and_local_ui_contract(app, client):
+        response = client.get("/")
+        assert response.status_code == 200
+        assert b'class="skip-link"' in response.data
+        assert b'aria-live="polite"' in response.data
+        assert b'id="drop-zone"' in response.data
+        assert b'id="source-dialog"' in response.data
+        assert b"Choose a source" in response.data
+        assert b"toastify" not in response.data.lower()
+        assert b"/static/socket.io.min.js" in response.data
+        assert b"/socket.io/socket.io.js" not in response.data
+        script = client.get("/static/socket.io.min.js")
+>       assert script.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <WrapperTestResponse streamed [404 NOT FOUND]>.status_code
+
+tests/test_app.py:58: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_app.py::test_render_includes_accessibility_and_local_ui_contract - assert 404 == 200
+ +  where 404 = <WrapperTestResponse streamed [404 NOT FOUND]>.status_code
+1 failed, 81 passed in 1.72s
+Error: Process completed with exit code 1.
+</user_query>
+text
+
+--- LINE 261 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 3:25 PM (UTC+3)</timestamp>
+<user_query>
+I thought I could queue however many songs I wanted... what happened here? Downloaded 72 out of 250 songs, the rest just failed because of this error: "This request exceeds the remaining per-job disk budget". Is it because it's keeping all the downloaded songs on disk, and it hit the budget there? Also I can't download the songs as ZIP becase "Completed files exceed the ZIP size limit". Do a diagnosis and give me a few system architecture/design changes we could try or fixes we could apply, give me our options.
+</user_query>
+text
+
+--- LINE 273 role=user ---
+user
+<manually_attached_skills>
+The user has manually attached the following skills to their message.
+These skills contain specific instructions or workflows that the user wants you to follow for this request.
+Only read the files if needed, the full skill content is inlined here.
+
+Skill Name: ui-ux-pro-max
+Path: c:\Users\farro\.agents\skills\ui-ux-pro-max\SKILL.md
+SKILL.md content:
+# ui-ux-pro-max
+
+Comprehensive design guide for web, mobile, and desktop applications. Contains 67 styles, 161 color palettes, 57 font pairings, 99 UX guidelines, and 25 chart types across 22 technology stacks. Searchable database with priority-based recommendations.
+
+## When to Apply
+
+当任务涉及 **UI 结构、视觉设计决策、交互模式或用户体验质量控制** 时，应使用此 Skill。
+
+### Primary Use Cases
+
+在以下情况此 Skill 最为有用：
+
+- 设计新的页面（Landing Page、Dashboard、Admin、SaaS、Mobile App）
+- 创建或重构 UI 组件（按钮、弹窗、表单、表格、图表等）
+- 选择配色方案、字体系统、间距规范或布局体系
+- 审查 UI 代码的用户体验、可访问性或视觉一致性
+- 实现导航结构、动效或响应式行为
+- 做产品层级的设计决策（风格、信息层级、品牌表达）
+- 提升界面的感知质量、清晰度或可用性
+
+### Recommended
+
+在以下情况建议使用此 Skill：
+
+- UI 看起来"不够专业"，但原因不明确
+- 收到可用性或体验方面的反馈
+- 准备上线前的 UI 质量优化
+- 需要对齐跨平台设计（Web / iOS / Android）
+- 构建设计系统或可复用组件库
+
+### Skip
+
+在以下情况无需使用此 Skill：
+
+- 纯后端逻辑开发
+- 仅涉及 API 或数据库设计
+- 与界面无关的性能优化
+- 基础设施或 DevOps 工作
+- 非视觉类脚本或自动化任务
+
+**判断准则**：如果任务会改变某个功能 **看起来如何、使用起来如何、如何运动或如何被交互**，就应该使用此 Skill。
+
+## Rule Categories by Priority
+
+*供人工/AI 查阅：按 1→10 决定先关注哪类规则；需要细则时用 `--domain <Domain>` 查询。脚本不读取本表。*
+
+| Priority | Category | Impact | Domain | Key Checks (Must Have) | Anti-Patterns (Avoid) |
+|----------|----------|--------|--------|------------------------|------------------------|
+| 1 | Accessibility | CRITICAL | `ux` | Contrast 4.5:1, Alt text, Keyboard nav, Aria-labels | Removing focus rings, Icon-only buttons without labels |
+| 2 | Touch & Interaction | CRITICAL | `ux` | Min size 44×44px, 8px+ spacing, Loading feedback | Reliance on hover only, Instant state changes (0ms) |
+| 3 | Performance | HIGH | `ux` | WebP/AVIF, Lazy loading, Reserve space (CLS &lt; 0.1) | Layout thrashing, Cumulative Layout Shift |
+| 4 | Style Selection | HIGH | `style`, `product` | Match product type, Consistency, SVG icons (no emoji) | Mixing flat & skeuomorphic randomly, Emoji as icons |
+| 5 | Layout & Responsive | HIGH | `ux` | Mobile-first breakpoints, Viewport meta, No horizontal scroll | Horizontal scroll, Fixed px container widths, Disable zoom |
+| 6 | Typography & Color | MEDIUM | `typography`, `color` | Base 16px, Line-height 1.5, Semantic color tokens | Text &lt; 12px body, Gray-on-gray, Raw hex in components |
+| 7 | Animation | MEDIUM | `ux` | Duration 150–300ms, Motion conveys meaning, Spatial continuity | Decorative-only animation, Animating width/height, No reduced-motion |
+| 8 | Forms & Feedback | MEDIUM | `ux` | Visible labels, Error near field, Helper text, Progressive disclosure | Placeholder-only label, Errors only at top, Overwhelm upfront |
+| 9 | Navigation Patterns | HIGH | `ux` | Predictable back, Bottom nav ≤5, Deep linking | Overloaded nav, Broken back behavior, No deep links |
+| 10 | Charts & Data | LOW | `chart` | Legends, Tooltips, Accessible colors | Relying on color alone to convey meaning |
+
+## Quick Reference
+
+### 1. Accessibility (CRITICAL)
+
+- `color-contrast` - Minimum 4.5:1 ratio for normal text (large text 3:1); Material Design
+- `focus-states` - Visible focus rings on interactive elements (2–4px; Apple HIG, MD)
+- `alt-text` - Descriptive alt text for meaningful images
+- `aria-labels` - aria-label for icon-only buttons; accessibilityLabel in native (Apple HIG)
+- `keyboard-nav` - Tab order matches visual order; full keyboard support (Apple HIG)
+- `form-labels` - Use label with for attribute
+- `skip-links` - Skip to main content for keyboard users
+- `heading-hierarchy` - Sequential h1→h6, no level skip
+- `color-not-only` - Don't convey info by color alone (add icon/text)
+- `dynamic-type` - Support system text scaling; avoid truncation as text grows (Apple Dynamic Type, MD)
+- `reduced-motion` - Respect prefers-reduced-motion; reduce/disable animations when requested (Apple Reduced Motion API, MD)
+- `voiceover-sr` - Meaningful accessibilityLabel/accessibilityHint; logical reading order for VoiceOver/screen readers (Apple HIG, MD)
+- `escape-routes` - Provide cancel/back in modals and multi-step flows (Apple HIG)
+- `keyboard-shortcuts` - Preserve system and a11y shortcuts; offer keyboard alternatives for drag-and-drop (Apple HIG)
+
+### 2. Touch & Interaction (CRITICAL)
+
+- `touch-target-size` - Min 44×44pt (Apple) / 48×48dp (Material); extend hit area beyond visual bounds if needed
+- `touch-spacing` - Minimum 8px/8dp gap between touch targets (Apple HIG, MD)
+- `hover-vs-tap` - Use click/tap for primary interactions; don't rely on hover alone
+- `loading-buttons` - Disable button during async operations; show spinner or progress
+- `error-feedback` - Clear error messages near problem
+- `cursor-pointer` - Add cursor-pointer to clickable elements (Web)
+- `gesture-conflicts` - Avoid horizontal swipe on main content; prefer vertical scroll
+- `tap-delay` - Use touch-action: manipulation to reduce 300ms delay (Web)
+- `standard-gestures` - Use platform standard gestures consistently; don't redefine (e.g. swipe-back, pinch-zoom) (Apple HIG)
+- `system-gestures` - Don't block system gestures (Control Center, back swipe, etc.) (Apple HIG)
+- `press-feedback` - Visual feedback on press (ripple/highlight; MD state layers)
+- `haptic-feedback` - Use haptic for confirmations and important actions; avoid overuse (Apple HIG)
+- `gesture-alternative` - Don't rely on gesture-only interactions; always provide visible controls for critical actions
+- `safe-area-awareness` - Keep primary touch targets away from notch, Dynamic Island, gesture bar and screen edges
+- `no-precision-required` - Avoid requiring pixel-perfect taps on small icons or thin edges
+- `swipe-clarity` - Swipe actions must show clear affordance or hint (chevron, label, tutorial)
+- `drag-threshold` - Use a movement threshold before starting drag to avoid accidental drags
+
+### 3. Performance (HIGH)
+
+- `image-optimization` - Use WebP/AVIF, responsive images (srcset/sizes), lazy load non-critical assets
+- `image-dimension` - Declare width/height or use aspect-ratio to prevent layout shift (Core Web Vitals: CLS)
+- `font-loading` - Use font-display: swap/optional to avoid invisible text (FOIT); reserve space to reduce layout shift (MD)
+- `font-preload` - Preload only critical fonts; avoid overusing preload on every variant
+- `critical-css` - Prioritize above-the-fold CSS (inline critical CSS or early-loaded stylesheet)
+- `lazy-loading` - Lazy load non-hero components via dynamic import / route-level splitting
+- `bundle-splitting` - Split code by route/feature (React Suspense / Next.js dynamic) to reduce initial load and TTI
+- `third-party-scripts` - Load third-party scripts async/defer; audit and remove unnecessary ones (MD)
+- `reduce-reflows` - Avoid frequent layout reads/writes; batch DOM reads then writes
+- `content-jumping` - Reserve space for async content to avoid layout jumps (Core Web Vitals: CLS)
+- `lazy-load-below-fold` - Use loading="lazy" for below-the-fold images and heavy media
+- `virtualize-lists` - Virtualize lists with 50+ items to improve memory efficiency and scroll performance
+- `main-thread-budget` - Keep per-frame work under ~16ms for 60fps; move heavy tasks off main thread (HIG, MD)
+- `progressive-loading` - Use skeleton screens / shimmer instead of long blocking spinners for >1s operations (Apple HIG)
+- `input-latency` - Keep input latency under ~100ms for taps/scrolls (Material responsiveness standard)
+- `tap-feedback-speed` - Provide visual feedback within 100ms of tap (Apple HIG)
+- `debounce-throttle` - Use debounce/throttle for high-frequency events (scroll, resize, input)
+- `offline-support` - Provide offline state messaging and basic fallback (PWA / mobile)
+- `network-fallback` - Offer degraded modes for slow networks (lower-res images, fewer animations)
+
+### 4. Style Selection (HIGH)
+
+- `style-match` - Match style to product
+
+--- LINE 280 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 3:51 PM (UTC+3)</timestamp>
+<user_query>
+C.
+</user_query>
+text
+
+--- LINE 285 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 3:53 PM (UTC+3)</timestamp>
+<user_query>
+Run the `continual-learning` skill now. Use the `agents-memory-updater` subagent for the full memory update flow. Use incremental transcript processing with index file `C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\.cursor\hooks\state\continual-learning-index.json`: only consider transcripts not in the index or transcripts whose mtime is newer than indexed mtime. Have the subagent refresh index mtimes, remove entries for deleted transcripts, and update `AGENTS.md` only for high-signal recurring user corrections and durable workspace facts. Exclude one-off/transient details and secrets. If no meaningful updates exist, respond exactly: No high-signal memory updates.
+</user_query>
+text
+
+--- LINE 291 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 3:57 PM (UTC+3)</timestamp>
+<user_query>
+```chat_selection
+agent_id: a521cd48-1cfe-4072-9d1e-5c5b65c9a815
+composer_id: a521cd48-1cfe-4072-9d1e-5c5b65c9a815
+selected_text:
+Does this destination/write-through behavior look right, or should colliding names get a suffix (Halo - Beyoncé (2).mp3) instead of treating them as already saved?
+```
+ Suffix, and only use the "song title" in "Title Case", not "song - artist". Also, for the songs that fail, could we also include 3 sources from the ones that were excluded even though they were the top-most results? Or add a "load more" button in case the user doesn't find the source they want in the 3 that are shown initially. Plan this for after, not right now.
+</user_query>
+text
+
+--- LINE 295 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 4:00 PM (UTC+3)</timestamp>
+<user_query>
+Sounds good.
+</user_query>
+text
+
+--- LINE 297 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 4:18 PM (UTC+3)</timestamp>
+<user_query>
+Good
+</user_query>
+text
+
+--- LINE 303 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 6:51 PM (UTC+3)</timestamp>
+<user_query>
+Sounds good, start implementing.
+</user_query>
+text
+
+--- LINE 345 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 6:51 PM (UTC+3)</timestamp>
+<user_query>
+Sounds good, start implementing.
+</user_query>
+text
+
+--- LINE 352 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 7:58 PM (UTC+3)</timestamp>
+<user_query>
+Ok let's do the other things we had planned.
+</user_query>
+text
+
+--- LINE 377 role=user ---
+user
+<timestamp>Sunday, Aug 16, 2026, 8:24 PM (UTC+3)</timestamp>
+<user_query>
+All good, go for it.
+</user_query>
+text
+
+--- LINE 404 role=user ---
+user
+<timestamp>Tuesday, Aug 18, 2026, 3:25 PM (UTC+3)</timestamp>
+<user_query>
+Problem, all track downloads are giving me this error now:
+yt_dlp.utils.DownloadError: ERROR: unable to download video data: HTTP Error 403: Forbidden
+WARNING: [youtube] m8E3Dh-gfhM: ios client https formats require a GVS PO Token which was not provided. They will be skipped as they may yield HTTP Error 403. You can manually pass a GVS PO Token for this client with --extractor-args "youtube:po_token=ios.gvs+XXX". For more information, refer to  https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide 
+ERROR: unable to download video data: HTTP Error 403: Forbidden 
+ERROR: unable to download video data: HTTP Error 403: Forbidden
+</user_query>
+text
+
+--- LINE 426 role=user ---
+user
+<timestamp>Tuesday, Aug 18, 2026, 4:29 PM (UTC+3)</timestamp>
+<user_query>
+Ok I just thought of two features we could add:
+1. When "choosing source" we could have a small preview/play button to play a 30-second preview of the audio that would be downloaded from that source
+2. If the sources are not what the user is looking for, we could add a button or option so they can put a spotify/youtube link themselves.
+</user_query>
+text
+
+--- LINE 446 role=user ---
+user
+<timestamp>Tuesday, Aug 18, 2026, 5:35 PM (UTC+3)</timestamp>
+<user_query>
+Continue.
+</user_query>
+text
+
+--- LINE 485 role=user ---
+user
+<timestamp>Tuesday, Aug 18, 2026, 6:16 PM (UTC+3)</timestamp>
+<user_query>
+Keep getting "aceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1610, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1509, in download_song_from_youtube
+    raise DownloadError("No matching audio source found")
+yt_dlp.utils.DownloadError: No matching audio source found
+2026-08-18 18:13:56,857 [ERROR] Job IHXSzFWGePBjWSq88UdC8cnCyaCLJX50l4WvkWBPRJM track 52 failed
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1610, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1509, in download_song_from_youtube
+    raise DownloadError("No matching audio source found")
+yt_dlp.utils.DownloadError: No matching audio source found" whenever I try to play the previews... just constant "preview unavailable" for every single one
+</user_query>
+text
+
+--- LINE 488 role=user ---
+user
+<mcp_meta_tools>
+You have access to MCP (Model Context Protocol) tools through `GetMcpTools` and `CallMcpTool`.
+
+## MCP Tool Discovery and Invocation
+
+Use `GetMcpTools` to discover tool schemas, then `CallMcpTool` to invoke them. Aim to minimize round-trips: ideally one `GetMcpTools` call followed by one `CallMcpTool` call.
+
+If the user mentions, references, or links to a product or service that corresponds to an available MCP server, and the request likely depends on information from that service, proactively inspect that MCP server before answering. Do not wait for the user to explicitly ask you to use MCP. If you are unsure which server matches, use `GetMcpTools` with a pattern based on the service name.
+
+`GetMcpTools` supports four modes:
+
+1. `{"server":"<id>"}`: returns full input schemas and full descriptions for every tool on that server. Preferred when you know which server to use.
+2. `{"server":"<id>","toolName":"<name>"}`: returns the full schema and full description for one tool.
+3. `{"pattern":"<regex>"}`: searches tool and server names across all servers using RE2 syntax (no backreferences, lookahead, or lookbehind). Use when you're unsure which server has the tool you need.
+4. No arguments: returns a catalog of all servers with tool names and short descriptions. Only use this if you have no idea which server or tool to look for — in most cases, prefer fetching by server or pattern instead.
+
+Pattern-search and catalog results shorten long descriptions, marked by a trailing "... [truncated]"; server and single-tool lookups always return the complete description.
+
+MANDATORY - Always call `GetMcpTools` to discover a tool's schema before invoking it with `CallMcpTool`. If you already know the server, go directly to it rather than listing the full catalog first.
+
+If the available MCP tools do not fully support what the user asked you to do, complete the work you can with the current tool set. In your work summary, include what you were unable to do with MCP and why. Do not use browser automation to work around missing or unavailable MCP tools unless the user explicitly asks you to use the browser.
+
+Available MCP servers:
+
+<mcp_meta_tool_servers>
+<mcp_meta_tool_server name="cursor-app-control" tools="move_agent_to_root, move_agent_to_cloned_root, create_project, rename_chat, open_resource, open_automation" serverUseInstructions="Controls the Cursor application itself (workspace root, projects, opening resources and automations, user rules, chat title). See each tool description for usage." />
+<mcp_meta_tool_server name="cursor-ide-browser" tools="browser_navigate, browser_snapshot, browser_click, browser_mouse_click_xy, browser_type, browser_fill, browser_select_option, browser_press_key, browser_scroll, browser_drag, browser_get_bounding_box, browser_highlight, browser_tabs, browser_cdp, browser_take_screenshot, browser_lock" serverUseInstructions="The cursor-ide-browser MCP server provides a Cursor-owned browser tab plus a raw Chrome DevTools Protocol command tool.
+
+CORE WORKFLOW:
+1. Start by understanding the user's goal and what success looks like on the page.
+2. Use browser_tabs with action "list" to inspect open tabs and URLs before acting.
+3. Use browser_navigate to create or navigate the target tab. Omit the position parameter for background automation so focus is preserved.
+4. Use browser_lock before longer automation on an existing tab, then browser_lock with action "unlock" when finished.
+5. Use browser_snapshot for accessibility context and browser_take_screenshot for visual verification.
+6. Use browser_click, browser_type, browser_fill, browser_select_option, browser_press_key, browser_scroll, and browser_drag for page interactions.
+7. Use browser_highlight and browser_get_bounding_box for visual grounding and coordinate diagnostics.
+8. Use browser_cdp for page inspection, profiling, runtime evaluation, DOM/CSS queries, and performance data.
+
+AVOID RABBIT HOLES:
+1. Do not repeat the same failing action more than once without new evidence such as a fresh snapshot, a different ref, a changed page state, or a clear new hypothesis.
+2. IMPORTANT: If four attempts fail or progress stalls, stop acting and report what you observed, what blocked progress, and the most likely next step.
+3. Prefer gathering evidence over brute force. If the page is confusing, use browser_snapshot, browser_take_screenshot, or CDP inspection before trying more actions.
+4. If you encounter a blocker such as login, passkey/manual user interaction, permissions, captchas, destructive confirmations, missing data, or an unexpected state, stop and report it instead of improvising repeated actions.
+5. Do not get stuck in wait-action-wait loops. Every retry should be justified by something newly observed.
+
+CRITICAL - Lock/unlock workflow:
+1. browser_lock requires an existing browser tab - you CANNOT call browser_lock with action: "lock" before browser_navigate
+2. Correct order: browser_navigate -> browser_lock({ action: "lock" }) -> (interactions) -> browser_lock({ action: "unlock" })
+3. If a browser tab already exists (check with browser_tabs list), call browser_lock with action: "lock" FIRST before any interactions
+4. Only call browser_lock with action: "unlock" when completely done with ALL browser operations for this turn
+
+IMPORTANT - Waiting strategy:
+When waiting for page changes, prefer short CDP polling loops with Runtime.evaluate, DOM queries, Page lifecycle signals, or browser_snapshot checks rather than a single long wait.
+
+CDP USAGE:
+- Use browser_cdp with a DevTools Protocol method and params object, for example Runtime.evaluate, DOM.getDocument, CSS.getComputedStyleForNode, Profiler.start/stop, Performance.getMetrics, Log.enable, and Network.enable.
+- Do not use browser_cdp with CDP Input.* methods. They are denied because they are focus-sensitive in Electron webviews and can route input to Cursor UI instead of the browser page.
+- Use browser_click, browser_type, browser_fill, browser_select_option, browser_press_key, browser_scroll, and browser_drag for clicks, typing, filling inputs, selecting options, keyboard actions, scrolling, and drag-and-drop.
+- Use Runtime.evaluate for advanced DOM-scoped interactions that the dedicated browser tools do not cover.
+- For profiling, call Profiler.enable, Profiler.start, reproduce the behavior, then Profiler.stop. The profile is saved to a file and returned as a log_file; read that file only when you need to inspect details.
+- For JavaScript evaluation, prefer Runtime.evaluate with returnByValue when possible.
+- Some browser-wide or sensitive CDP methods are denied, especially cookie, storage, permission, download, target-management, filesystem-backed file-input commands, system-level commands, and CDP navigation/history navigation commands.
+- Large CDP responses are saved to files instead of being inlined. Prefer using the returned file path over immediately stuffing large payloads into context; read focused sections only when needed.
+
+VISION:
+- browser_take_screenshot attaches an image result that the model can inspect. CDP Page.captureScreenshot returns data inside JSON and should not replace browser_take_screenshot when visual verification is needed.
+
+NOTES:
+- browser_snapshot returns snapshot YAML and is the main source of truth for page structure.
+- Refs are opaque handles tied to the latest browser_snapshot for that tab.
+- Iframe content is not accessible - only elements outside iframes can be interacted with.
+- When you stop to report a blocker, include the current page, the target you were trying to reach, the blocker you observed, and the best next action. If the blocker requires manual user interaction, ask the user to take over at that point rather than assuming it in advance." />
+<mcp_meta_tool_server name="plugin-notion-workspace-notion" />
+<mcp_meta_tool_server name="plugin-vercel-vercel" />
+<mcp_meta_tool_server name="plugin-supabase-supabase" />
+<mcp_meta_tool_server name="plugin-figma-figma"
+
+--- LINE 489 role=user ---
+user
+<timestamp>Tuesday, Aug 18, 2026, 6:16 PM (UTC+3)</timestamp>
+<user_query>
+Keep getting "aceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1610, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1509, in download_song_from_youtube
+    raise DownloadError("No matching audio source found")
+yt_dlp.utils.DownloadError: No matching audio source found
+2026-08-18 18:13:56,857 [ERROR] Job IHXSzFWGePBjWSq88UdC8cnCyaCLJX50l4WvkWBPRJM track 52 failed
+Traceback (most recent call last):
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1610, in process_song
+    download_song_from_youtube(
+  File "C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\app.py", line 1509, in download_song_from_youtube
+    raise DownloadError("No matching audio source found")
+yt_dlp.utils.DownloadError: No matching audio source found" whenever I try to play the previews... just constant "preview unavailable" for every single one
+</user_query>
+text
+
+--- LINE 532 role=user ---
+user
+<timestamp>Tuesday, Aug 18, 2026, 6:26 PM (UTC+3)</timestamp>
+<user_query>
+Run the `continual-learning` skill now. Use the `agents-memory-updater` subagent for the full memory update flow. Use incremental transcript processing with index file `C:\Users\farro\Desktop\LifeOS\03 Projects\SignalForge\.cursor\hooks\state\continual-learning-index.json`: only consider transcripts not in the index or transcripts whose mtime is newer than indexed mtime. Have the subagent refresh index mtimes, remove entries for deleted transcripts, and update `AGENTS.md` only for high-signal recurring user corrections and durable workspace facts. Exclude one-off/transient details and secrets. If no meaningful updates exist, respond exactly: No high-signal memory updates.
+</user_query>
+text

@@ -165,7 +165,12 @@ Midnight Drive,Nova Lines,Afterglow,"Electronic, Synthwave"</pre>
       <form method="dialog" class="source-dialog-chrome">
         <h2 id="source-dialog-title">Choose a source</h2>
         <p id="source-dialog-meta"></p>
+        <div class="source-paste">
+          <input id="source-dialog-url" type="url" maxlength="500" placeholder="Paste a Spotify or YouTube link" autocomplete="off">
+          <button class="button button-quiet" id="source-dialog-paste" type="button">Add link</button>
+        </div>
         <div id="source-dialog-cards" class="source-cards"></div>
+        <audio id="source-dialog-audio" preload="none"></audio>
         <div class="source-dialog-actions">
           <button class="button button-quiet" id="source-dialog-more" type="button" hidden>Load more</button>
           <button class="button button-quiet" id="source-dialog-close" value="cancel">Close</button>
