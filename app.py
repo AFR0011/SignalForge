@@ -1250,6 +1250,7 @@ def build_source_preview(
     video_id: str,
     ffmpeg_path: str,
     max_source_bytes: int,
+    skip_match_filter: bool = False,
 ) -> Path | None:
     bound = youtube_video_id(video_id)
     if bound is None:
@@ -1277,6 +1278,8 @@ def build_source_preview(
         "noplaylist": True,
         "download_ranges": lambda _info, _ydl: [{"start_time": 0, "end_time": PREVIEW_SECONDS}],
     }
+    if skip_match_filter:
+        options.pop("match_filter", None)
 
     def remove_leftovers() -> None:
         for leftover in output_base.parent.glob(f"{output_base.name}.*"):
@@ -1487,6 +1490,7 @@ def download_song_from_youtube(
     watch_url: str = "",
     picker_out: list[dict[str, Any]] | None = None,
     picker_filled: list[bool] | None = None,
+    skip_match_filter: bool = False,
 ) -> None:
     def progress_hook(data: dict[str, Any]) -> None:
         for key in ("total_bytes", "total_bytes_estimate", "downloaded_bytes"):
@@ -1531,6 +1535,8 @@ def download_song_from_youtube(
         "writethumbnail": True,
         "noplaylist": True,
     }
+    if skip_match_filter:
+        download_options.pop("match_filter", None)
 
     def remove_leftovers() -> None:
         for leftover in output_base.parent.glob(f"{output_base.name}.*"):
@@ -1646,7 +1652,13 @@ def process_song(
 
     with job.lock:
         forced_id = job.forced_sources.pop(index, "")
-        if not forced_id:
+        skip_match_filter = False
+        if forced_id:
+            for item in job.source_choices.get(index) or []:
+                if item.get("id") == forced_id and item.get("pasted"):
+                    skip_match_filter = True
+                    break
+        else:
             job.source_choices.pop(index, None)
     watch = f"https://www.youtube.com/watch?v={forced_id}" if youtube_video_id(forced_id) else ""
     picker_out: list[dict[str, Any]] = []
@@ -1680,6 +1692,7 @@ def process_song(
                     watch_url=watch,
                     picker_out=picker_out,
                     picker_filled=picker_filled,
+                    skip_match_filter=skip_match_filter,
                 )
                 tag_mp3_file(filepath, song, int(app.config["ARTWORK_MAX_BYTES"]))
             actual_bytes = filepath.stat().st_size
@@ -2194,9 +2207,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return jsonify(error="File not found"), 404
         bound = youtube_video_id(video_id)
         with job.lock:
-            allowed = {item.get("id") for item in job.source_choices.get(index) or []}
+            stored = list(job.source_choices.get(index) or [])
+            allowed = {item.get("id") for item in stored}
             if not failed_track_locked(job, index) or bound is None or bound not in allowed:
                 return jsonify(error="File not found"), 404
+            skip_match_filter = any(item.get("id") == bound and item.get("pasted") for item in stored)
         with job.preview_lock:
             cached = preview_clip_path(job.directory, bound)
             if cached.is_file() and 0 < cached.stat().st_size <= PREVIEW_MAX_BYTES:
@@ -2207,6 +2222,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     bound,
                     resolve_ffmpeg(flask_app.config.get("FFMPEG_PATH")),
                     int(flask_app.config["MAX_SOURCE_BYTES"]),
+                    skip_match_filter=skip_match_filter,
                 )
                 if built is None or not built.is_file():
                     return jsonify(error="File not found"), 404

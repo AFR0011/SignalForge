@@ -487,6 +487,31 @@ def test_process_song_automatic_retry_replaces_pasted_list(app, client, monkeypa
     assert not job.source_choices[0][0].get("pasted")
 
 
+def test_process_song_skips_match_filter_for_pasted_forced_id(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(application, "tag_mp3_file", lambda *args: None)
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    job.source_choices[0] = [
+        {"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201, "pasted": True},
+    ]
+    job.forced_sources[0] = "labellabel1"
+    captured: dict[str, Any] = {}
+
+    def fake_download(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        captured["skip_match_filter"] = kwargs.get("skip_match_filter")
+        captured["watch_url"] = kwargs.get("watch_url")
+        output_base.with_suffix(".mp3").write_bytes(b"audio")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fake_download)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert captured["watch_url"] == "https://www.youtube.com/watch?v=labellabel1"
+    assert captured["skip_match_filter"] is True
+
+
 def test_process_song_forced_watch_url_non_403_keeps_picker_id(app, client, monkeypatch):
     upload_csv(app, client)
     job = current_job(client)
@@ -890,6 +915,67 @@ def test_build_source_preview_returns_none_on_403_or_oversize(tmp_path, monkeypa
     assert not (job_dir / "preview-labellabel1.mp3").exists()
 
 
+def test_forced_download_omits_match_filter_when_skip_requested(tmp_path, monkeypatch):
+    output_base = tmp_path / "track"
+    captured: dict[str, Any] = {}
+
+    class FakeYDL:
+        def __init__(self, options):
+            captured.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def download(self, queries):
+            captured["queries"] = queries
+            output_base.with_suffix(".mp3").write_bytes(b"audio")
+
+        def extract_info(self, _url, download=True):
+            raise AssertionError("forced watch URL must not search")
+
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    application.download_song_from_youtube(
+        "Starling Halo",
+        output_base,
+        "ffmpeg",
+        lambda *_args: None,
+        100,
+        watch_url="https://www.youtube.com/watch?v=labellabel1",
+        skip_match_filter=True,
+    )
+    assert "match_filter" not in captured
+    assert captured["queries"] == ["https://www.youtube.com/watch?v=labellabel1"]
+
+
+def test_build_source_preview_omits_match_filter_when_skip_requested(tmp_path, monkeypatch):
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    captured: dict[str, Any] = {}
+
+    class FakeYDL:
+        def __init__(self, options):
+            captured.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def download(self, _queries):
+            Path(captured["outtmpl"].replace(".%(ext)s", ".mp3")).write_bytes(b"ID3preview")
+
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    result = application.build_source_preview(job_dir, "labellabel1", "ffmpeg", 100, skip_match_filter=True)
+    assert result == job_dir / "preview-labellabel1.mp3"
+    assert "match_filter" not in captured
+
+
 def test_source_preview_route_serves_cached_clip_for_stored_id(app, client, monkeypatch):
     upload_csv(app, client)
     job = current_job(client)
@@ -904,7 +990,7 @@ def test_source_preview_route_serves_cached_clip_for_stored_id(app, client, monk
     job.source_choices[0] = [{"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201}]
     builds: list[str] = []
 
-    def fake_build(job_directory, video_id, ffmpeg_path, max_source_bytes):
+    def fake_build(job_directory, video_id, ffmpeg_path, max_source_bytes, skip_match_filter=False):
         builds.append(video_id)
         path = application.preview_clip_path(job_directory, video_id)
         path.write_bytes(b"ID3clip")
@@ -927,6 +1013,35 @@ def test_source_preview_route_serves_cached_clip_for_stored_id(app, client, monk
     assert cached.status_code == 200
     assert builds == ["labellabel1"]
     assert job.statuses[0]["can_choose_source"] is True
+
+
+def test_source_preview_route_skips_match_filter_for_pasted_id(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    job.failed.add(0)
+    job.statuses[0] = {
+        "status": "failed",
+        "index": 0,
+        "job_id": job.job_id,
+        "message": "failed",
+        "can_choose_source": True,
+    }
+    job.source_choices[0] = [
+        {"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201, "pasted": True},
+    ]
+    captured: dict[str, Any] = {}
+
+    def fake_build(job_directory, video_id, ffmpeg_path, max_source_bytes, skip_match_filter=False):
+        captured["skip_match_filter"] = skip_match_filter
+        path = application.preview_clip_path(job_directory, video_id)
+        path.write_bytes(b"ID3clip")
+        return path
+
+    monkeypatch.setattr(application, "build_source_preview", fake_build)
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    ok = client.get("/tracks/0/source-previews/labellabel1")
+    assert ok.status_code == 200
+    assert captured["skip_match_filter"] is True
 
 
 def test_source_preview_403_is_404_and_leaves_picker(app, client, monkeypatch):
