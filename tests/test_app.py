@@ -709,6 +709,99 @@ def test_choose_source_routes_require_failed_stored_id(app, client, monkeypatch)
     assert captured.get("watch_url") == "https://www.youtube.com/watch?v=labellabel1"
 
 
+def test_paste_source_youtube_and_spotify_and_rejects(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    token = csrf_for(app, client)
+    job.failed.add(0)
+    job.statuses[0] = {
+        "job_id": job.job_id,
+        "index": 0,
+        "status": "failed",
+        "message": "failed",
+        "can_choose_source": True,
+    }
+    job.source_choices[0] = [
+        {"id": f"pick{i:07d}", "title": "Halo", "channel": "Starling", "duration": 200}
+        for i in range(3)
+    ]
+    monkeypatch.setattr(
+        application,
+        "fetch_youtube_paste_card",
+        lambda video_id: {
+            "id": video_id,
+            "title": "Halo Audio",
+            "channel": "Label",
+            "duration": 201,
+            "pasted": True,
+        },
+    )
+    no_csrf = client.post("/paste-source", json={"index": 0, "url": "https://youtu.be/labellabel1"})
+    assert no_csrf.status_code == 400
+    bad = client.post(
+        "/paste-source",
+        json={"index": 0, "url": "https://open.spotify.com/playlist/abc"},
+        headers={"X-CSRFToken": token},
+    )
+    assert bad.status_code == 400
+    assert bad.json["error"] == application.PASTE_INVALID_MESSAGE
+    queued = client.post(
+        "/paste-source",
+        json={"index": 0, "url": "https://youtu.be/labellabel1"},
+        headers={"X-CSRFToken": token},
+    )
+    # index 0 is failed, should 200
+    assert queued.status_code == 200
+    assert queued.json["sources"][0]["id"] == "labellabel1"
+    assert queued.json["sources"][0]["pasted"] is True
+    assert job.source_choices[0][0]["id"] == "labellabel1"
+    assert client.get("/tracks/0/sources").json["sources"][0]["id"] == "labellabel1"
+
+    previous = list(job.source_choices[0])
+    monkeypatch.setattr(application, "fetch_spotify_picker_sources", lambda *_a, **_k: None)
+    unread = client.post(
+        "/paste-source",
+        json={"index": 0, "url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"},
+        headers={"X-CSRFToken": token},
+    )
+    assert unread.status_code == 409
+    assert unread.json["error"] == "Could not read that Spotify link."
+    assert job.source_choices[0] == previous
+
+    monkeypatch.setattr(application, "fetch_spotify_picker_sources", lambda *_a, **_k: [])
+    empty = client.post(
+        "/paste-source",
+        json={"index": 0, "url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"},
+        headers={"X-CSRFToken": token},
+    )
+    assert empty.status_code == 409
+    assert empty.json["error"] == "No YouTube matches for that Spotify track."
+    assert job.source_choices[0] == previous
+
+    monkeypatch.setattr(
+        application,
+        "fetch_spotify_picker_sources",
+        lambda *_a, **_k: [{"id": "newsource01", "title": "Halo", "channel": "Label", "duration": 200}],
+    )
+    replaced = client.post(
+        "/paste-source",
+        json={"index": 0, "url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"},
+        headers={"X-CSRFToken": token},
+    )
+    assert replaced.status_code == 200
+    assert [item["id"] for item in replaced.json["sources"]] == ["newsource01"]
+    assert "pasted" not in replaced.json["sources"][0]
+
+    job.statuses[0]["status"] = "queued"
+    job.failed.discard(0)
+    not_failed = client.post(
+        "/paste-source",
+        json={"index": 0, "url": "https://youtu.be/labellabel1"},
+        headers={"X-CSRFToken": token},
+    )
+    assert not_failed.status_code == 409
+
+
 def test_source_thumbnail_allows_only_stored_id(app, client, monkeypatch):
     upload_csv(app, client)
     job = current_job(client)

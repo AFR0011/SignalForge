@@ -2277,6 +2277,47 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return jsonify(error=str(exc)), 409
         return jsonify(job_id=job.job_id, started=started), 202
 
+    @flask_app.route("/paste-source", methods=["POST"])
+    @limiter.limit("20 per minute")
+    def paste_source() -> Any:
+        job, error_response = mutation_job()
+        if error_response:
+            return error_response
+        assert job is not None
+        payload = request.get_json(silent=True) or {}
+        try:
+            index = int(payload.get("index"))
+        except (TypeError, ValueError):
+            return jsonify(error="Selection is invalid"), 400
+        raw_url = payload.get("url")
+        parsed = parse_pasted_source_url(str(raw_url if isinstance(raw_url, str) else ""))
+        if parsed is None:
+            return jsonify(error=PASTE_INVALID_MESSAGE), 400
+        with job.lock:
+            if not failed_track_locked(job, index):
+                return jsonify(error="Choose a source only for a failed track"), 409
+        if parsed["kind"] == "youtube":
+            card = fetch_youtube_paste_card(parsed["id"])
+            with job.lock:
+                if not failed_track_locked(job, index):
+                    return jsonify(error="Choose a source only for a failed track"), 409
+                updated = merge_pasted_youtube_choice(list(job.source_choices.get(index) or []), card)
+                job.source_choices[index] = updated
+                sources = list(updated)
+            return jsonify(sources=sources)
+        max_bytes = min(SOURCE_THUMB_MAX_BYTES, int(flask_app.config["ARTWORK_MAX_BYTES"]))
+        fetched = fetch_spotify_picker_sources(parsed["url"], max_bytes)
+        if fetched is None:
+            return jsonify(error="Could not read that Spotify link."), 409
+        if not fetched:
+            return jsonify(error="No YouTube matches for that Spotify track."), 409
+        with job.lock:
+            if not failed_track_locked(job, index):
+                return jsonify(error="Choose a source only for a failed track"), 409
+            job.source_choices[index] = list(fetched)
+            sources = list(fetched)
+        return jsonify(sources=sources)
+
     @flask_app.route("/tracks/<int:index>/source-thumbs/<video_id>", methods=["GET"])
     @limiter.limit("60 per minute")
     def track_source_thumb(index: int, video_id: str) -> Any:
