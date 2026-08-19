@@ -1218,6 +1218,102 @@ def parse_pasted_source_url(value: str) -> dict[str, str] | None:
     return None
 
 
+def merge_pasted_youtube_choice(choices: list[dict[str, Any]], card: dict[str, Any]) -> list[dict[str, Any]]:
+    video_id = youtube_video_id(str(card.get("id") or ""))
+    if video_id is None:
+        return list(choices)
+    pasted = {**card, "id": video_id, "pasted": True}
+    rest = [item for item in choices if item.get("id") != video_id]
+    return [pasted, *rest][:PICKER_SOURCE_LIMIT]
+
+
+def fetch_youtube_paste_card(video_id: str) -> dict[str, Any]:
+    bound = youtube_video_id(video_id)
+    fallback = {"id": bound or "", "title": "YouTube video", "channel": "", "duration": None, "pasted": True}
+    if bound is None:
+        return fallback
+    runtime_name, runtime_path = resolve_js_runtime()
+    options = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "js_runtimes": {runtime_name: {"path": runtime_path}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "default", "-android_vr", "-ios", "-android_sdkless"],
+            }
+        },
+    }
+    try:
+        with YoutubeDL(options) as downloader:
+            info = downloader.extract_info(f"https://www.youtube.com/watch?v={bound}", download=False) or {}
+    except DownloadError:
+        return fallback
+    duration = info.get("duration")
+    duration_value = int(duration) if isinstance(duration, (int, float)) and not isinstance(duration, bool) else None
+    return {
+        "id": bound,
+        "title": str(info.get("title") or "YouTube video"),
+        "channel": str(info.get("uploader") or info.get("channel") or ""),
+        "duration": duration_value,
+        "pasted": True,
+    }
+
+
+def _spotify_title_artist(payload: dict[str, Any]) -> tuple[str, str] | None:
+    title = str(payload.get("title") or "").strip()
+    artist = str(payload.get("author_name") or "").strip()
+    if not artist:
+        for separator in (" - ", " by "):
+            if separator in title:
+                title, artist = (part.strip() for part in title.rsplit(separator, 1))
+                break
+    if not title:
+        return None
+    return title, artist
+
+
+def fetch_spotify_picker_sources(track_url: str, max_bytes: int) -> list[dict[str, Any]] | None:
+    try:
+        response = requests.get(
+            "https://open.spotify.com/oembed",
+            params={"url": track_url},
+            timeout=(3.05, 8),
+            stream=True,
+            allow_redirects=False,
+        )
+        if response.status_code != 200:
+            return None
+        host = urlparse(response.url).hostname
+        if host != "open.spotify.com":
+            return None
+        data = json.loads(_read_limited_response(response, max_bytes))
+        if not isinstance(data, dict):
+            return None
+        parsed = _spotify_title_artist(data)
+        if parsed is None:
+            return None
+        title, artist = parsed
+    except (requests.RequestException, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    runtime_name, runtime_path = resolve_js_runtime()
+    search_url = f"ytsearch{YOUTUBE_SEARCH_RESULTS}:{build_youtube_search_query(artist, title)}"
+    with YoutubeDL({
+        "quiet": True,
+        "extract_flat": True,
+        "skip_download": True,
+        "js_runtimes": {runtime_name: {"path": runtime_path}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "default", "-android_vr", "-ios", "-android_sdkless"],
+            }
+        },
+    }) as explorer:
+        listing = explorer.extract_info(search_url, download=False) or {}
+    entries = [entry for entry in listing.get("entries") or [] if isinstance(entry, dict)]
+    return collect_picker_sources(entries, set())
+
+
 def fetch_source_thumbnail(video_id: str, max_bytes: int) -> bytes | None:
     if youtube_video_id(video_id) is None:
         return None

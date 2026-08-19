@@ -795,6 +795,167 @@ def test_parse_pasted_source_url_accepts_youtube_and_spotify_tracks():
     assert application.PASTE_INVALID_MESSAGE == "Paste a Spotify track link or a YouTube video link."
 
 
+def test_merge_pasted_youtube_choice_prepends_dedupes_and_caps():
+    leftovers = [
+        {"id": f"pick{i:07d}", "title": "Halo", "channel": "Starling", "duration": 200}
+        for i in range(9)
+    ]
+    card = {"id": "labellabel1", "title": "Halo Audio", "channel": "Label", "duration": 201}
+    merged = application.merge_pasted_youtube_choice(leftovers, card)
+    assert merged[0]["id"] == "labellabel1"
+    assert merged[0]["pasted"] is True
+    assert len(merged) == 9
+    assert merged[-1]["id"] == "pick0000007"
+    again = application.merge_pasted_youtube_choice(merged, {"id": "pick0000000", "title": "Halo"})
+    assert again[0]["id"] == "pick0000000"
+    assert again[0]["pasted"] is True
+    assert [item["id"] for item in again].count("pick0000000") == 1
+
+
+def test_fetch_youtube_paste_card_uses_extract_or_generic(monkeypatch):
+    class FakeYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, url, download=False):
+            assert download is False
+            assert url.endswith("labellabel1")
+            return {
+                "id": "labellabel1",
+                "title": "Halo (Official Audio)",
+                "uploader": "Starling - Topic",
+                "duration": 255,
+            }
+
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    card = application.fetch_youtube_paste_card("labellabel1")
+    assert card == {
+        "id": "labellabel1",
+        "title": "Halo (Official Audio)",
+        "channel": "Starling - Topic",
+        "duration": 255,
+        "pasted": True,
+    }
+
+    class FailYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download=False):
+            raise application.DownloadError("403")
+
+    monkeypatch.setattr(application, "YoutubeDL", FailYDL)
+    fallback = application.fetch_youtube_paste_card("labellabel1")
+    assert fallback == {
+        "id": "labellabel1",
+        "title": "YouTube video",
+        "channel": "",
+        "duration": None,
+        "pasted": True,
+    }
+
+
+def test_fetch_spotify_picker_sources_oembed_and_leftover_filters(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    class FakeResponse:
+        status_code = 200
+        url = "https://open.spotify.com/oembed?url=https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"
+        headers = {"Content-Type": "application/json", "Content-Length": "80"}
+
+        def iter_content(self, _size):
+            yield b'{"title": "Halo", "author_name": "Starling"}'
+
+        def close(self):
+            return None
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        captured["allow_redirects"] = kwargs.get("allow_redirects")
+        return FakeResponse()
+
+    class FakeYDL:
+        def __init__(self, options):
+            captured["search"] = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, url, download=False):
+            captured["search_url"] = url
+            return {"entries": [
+                {"id": "labellabel1", "title": "Halo Official Audio", "uploader": "Label Records", "duration": 201, "view_count": 9},
+                {"id": "previewxx01", "title": "Halo Preview", "uploader": "User", "duration": 20},
+            ]}
+
+    monkeypatch.setattr(application.requests, "get", fake_get)
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    sources = application.fetch_spotify_picker_sources(
+        "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT",
+        200_000,
+    )
+    assert captured["url"] == "https://open.spotify.com/oembed"
+    assert captured["params"]["url"] == "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"
+    assert captured["allow_redirects"] is False
+    assert "Halo" in captured["search_url"] and "Starling" in captured["search_url"]
+    assert [item["id"] for item in sources] == ["labellabel1"]
+    assert "pasted" not in sources[0]
+
+    class EmptyYDL:
+        def __init__(self, options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, download=False):
+            return {"entries": []}
+
+    monkeypatch.setattr(application, "YoutubeDL", EmptyYDL)
+    assert application.fetch_spotify_picker_sources(
+        "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT",
+        200_000,
+    ) == []
+
+    class BadResponse:
+        status_code = 404
+        url = "https://open.spotify.com/oembed"
+        headers = {}
+
+        def iter_content(self, _size):
+            yield b""
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(application.requests, "get", lambda *_a, **_k: BadResponse())
+    assert application.fetch_spotify_picker_sources(
+        "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT",
+        200_000,
+    ) is None
+
+
 def test_build_source_preview_writes_bounded_mp3_without_library_or_retain(tmp_path, monkeypatch):
     job_dir = tmp_path / "job"
     job_dir.mkdir()
