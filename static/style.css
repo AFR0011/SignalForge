@@ -305,6 +305,16 @@ tr[data-state="failed"] .status-badge i { background: var(--danger); }
 .choose-source { margin-left: 8px; }
 .source-dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .source-dialog-chrome { min-width: min(520px, 100%); padding: 20px; }
+.source-paste { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 0; }
+.source-paste input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
 .source-cards { display: grid; gap: 12px; margin: 16px 0; }
 .source-card { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
 .source-card img { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; background: #0d1011; }

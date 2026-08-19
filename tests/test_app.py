@@ -253,6 +253,20 @@ def test_source_dialog_preview_play_is_a_non_submit_button():
     assert ".source-card-actions" in css
 
 
+def test_source_dialog_paste_field_posts_paste_source():
+    html = Path("templates/index.html").read_text(encoding="utf-8")
+    assert 'id="source-dialog-url"' in html
+    assert 'placeholder="Paste a Spotify or YouTube link"' in html
+    assert 'id="source-dialog-paste" type="button"' in html
+    assert "Add link" in html
+    js = Path("static/app.js").read_text(encoding="utf-8")
+    assert "/paste-source" in js
+    assert "source-dialog-paste" in js
+    assert "source-dialog-url" in js
+    css = Path("static/style.css").read_text(encoding="utf-8")
+    assert ".source-paste" in css
+
+
 @pytest.mark.parametrize("path", ["/this-path-does-not-exist", "/favicon.ico"])
 def test_missing_html_pages_return_404_not_500(app, client, path):
     response = client.get(path)

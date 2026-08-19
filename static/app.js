@@ -196,6 +196,8 @@
   const sourceCards = document.getElementById("source-dialog-cards");
   const sourceMore = document.getElementById("source-dialog-more");
   const sourceAudio = document.getElementById("source-dialog-audio");
+  const sourcePaste = document.getElementById("source-dialog-paste");
+  const sourceUrl = document.getElementById("source-dialog-url");
   const PICKER_PAGE_SIZE = 3;
   let sourceOpener = null;
   let sourceDialogGeneration = 0;
@@ -233,6 +235,7 @@
     previewButton = null;
     sourceOpener?.focus();
     sourceOpener = null;
+    if (sourceUrl) sourceUrl.value = "";
   };
 
   const closeSourceDialog = () => {
@@ -257,6 +260,30 @@
 
   const updateLoadMoreVisibility = () => {
     if (sourceMore) sourceMore.hidden = storedSources.length <= shownCount;
+  };
+
+  const setSourcePasteBusy = (busy) => {
+    if (sourceUrl) sourceUrl.disabled = busy;
+    if (sourcePaste) sourcePaste.disabled = busy;
+    if (sourceMore) sourceMore.disabled = busy;
+    sourceCards?.querySelectorAll("button").forEach((btn) => {
+      btn.disabled = busy;
+    });
+  };
+
+  const replaceSourceCards = (index, sources) => {
+    if (sourceAudio) {
+      sourceAudio.pause();
+      sourceAudio.removeAttribute("src");
+      sourceAudio.load();
+    }
+    previewButton = null;
+    storedSources = sources || [];
+    shownCount = 0;
+    sourceDialogIndex = index;
+    if (sourceCards) sourceCards.replaceChildren();
+    if (sourceMore) sourceMore.disabled = false;
+    renderNextSourcePage(index);
   };
 
   const appendSourceCards = (index, sources) => {
@@ -390,6 +417,31 @@
     event.preventDefault();
     if (sourceDialogIndex == null || sourceMore.hidden) return;
     renderNextSourcePage(sourceDialogIndex);
+  });
+  const pasteSourceLink = async (event) => {
+    event.preventDefault();
+    if (!sourceUrl || sourceDialogIndex == null || sourcePaste?.disabled) return;
+    setSourcePasteBusy(true);
+    try {
+      const data = await mutate("/paste-source", {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index: sourceDialogIndex, url: sourceUrl.value }),
+      });
+      replaceSourceCards(sourceDialogIndex, data.sources);
+      sourceUrl.value = "";
+    } catch (error) {
+      announce(error.status === 429 ? "Too many requests. Wait a moment and try again." : error.message, "error");
+    } finally {
+      setSourcePasteBusy(false);
+      updateLoadMoreVisibility();
+    }
+  };
+  sourcePaste?.addEventListener("click", pasteSourceLink);
+  sourceUrl?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      pasteSourceLink(event);
+    }
   });
   sourceAudio?.addEventListener("error", () => {
     if (!previewButton) return;
