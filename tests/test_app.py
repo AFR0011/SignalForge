@@ -384,7 +384,7 @@ def test_process_song_stores_picker_sources_and_can_choose_flag(app, client, mon
     assert "choose a source" in job.statuses[0]["message"]
 
 
-def test_process_song_empty_picker_stores_no_alternate_sources_message(app, client, monkeypatch):
+def test_process_song_empty_picker_still_allows_choose_source(app, client, monkeypatch):
     upload_csv(app, client)
     job = current_job(client)
     sio = app.extensions["socketio_instance"]
@@ -405,8 +405,11 @@ def test_process_song_empty_picker_stores_no_alternate_sources_message(app, clie
     application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
     assert 0 in job.failed
     assert not job.source_choices.get(0)
-    assert job.statuses[0]["can_choose_source"] is False
-    assert job.statuses[0]["message"] == "Download failed. No alternate sources found."
+    assert job.statuses[0]["can_choose_source"] is True
+    assert job.statuses[0]["message"] == "Download failed. You can retry this track or choose a source."
+    listed = client.get("/tracks/0/sources")
+    assert listed.status_code == 200
+    assert listed.json == {"sources": []}
 
 
 def test_process_song_forced_watch_url_403_drops_that_picker_id(app, client, monkeypatch):
@@ -433,6 +436,55 @@ def test_process_song_forced_watch_url_403_drops_that_picker_id(app, client, mon
     assert [item["id"] for item in job.source_choices[0]] == ["lyriclyric1"]
     assert job.statuses[0]["can_choose_source"] is True
     assert 0 not in job.forced_sources
+
+
+def test_process_song_forced_403_on_last_id_still_allows_choose_source(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    job.source_choices[0] = [{"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201}]
+    job.forced_sources[0] = "labellabel1"
+
+    def fail_forced(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        raise application.DownloadError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fail_forced)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert not job.source_choices.get(0)
+    assert job.statuses[0]["can_choose_source"] is True
+    assert "choose a source" in job.statuses[0]["message"]
+
+
+def test_process_song_automatic_retry_replaces_pasted_list(app, client, monkeypatch):
+    upload_csv(app, client)
+    job = current_job(client)
+    sio = app.extensions["socketio_instance"]
+    monkeypatch.setattr(application, "resolve_ffmpeg", lambda value=None: "ffmpeg")
+    monkeypatch.setattr(sio, "emit", lambda *args, **kwargs: None)
+    job.source_choices[0] = [
+        {"id": "labellabel1", "title": "Halo", "channel": "Label", "duration": 201, "pasted": True},
+    ]
+
+    def fail_download(_query, output_base, _ffmpeg, _progress, _max_source, **kwargs):
+        out = kwargs.get("picker_out")
+        if out is not None:
+            out.clear()
+            out.extend([{
+                "id": "newsource01",
+                "title": "Halo Official Audio",
+                "channel": "Label Records",
+                "duration": 201,
+            }])
+        raise application.DownloadError("No matching audio source found")
+
+    monkeypatch.setattr(application, "download_song_from_youtube", fail_download)
+    application.job_registry.reserve_indices(job, [0], 1, 10, 100)
+    application.process_song(app, sio, job.job_id, 0, dict(job.songs[0]), 10)
+    assert [item["id"] for item in job.source_choices[0]] == ["newsource01"]
+    assert not job.source_choices[0][0].get("pasted")
 
 
 def test_process_song_forced_watch_url_non_403_keeps_picker_id(app, client, monkeypatch):
@@ -1744,8 +1796,8 @@ def test_actual_byte_overflow_deletes_output_and_reconciles_counters(app, client
     assert job.files == {}
     assert job.failed == {0}
     assert list(job.directory.iterdir()) == []
-    assert job.statuses[0]["message"] == "Download failed. You can retry this track."
-    assert job.statuses[0].get("can_choose_source") is not True
+    assert job.statuses[0]["message"] == "Download failed. You can retry this track or choose a source."
+    assert job.statuses[0].get("can_choose_source") is True
 
 
 def test_start_and_worker_failures_release_reservations_and_outputs(app, client, monkeypatch):

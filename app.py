@@ -1746,21 +1746,16 @@ def process_song(
                         job.source_choices[index] = remaining
                     else:
                         job.source_choices.pop(index, None)
-                can_choose = bool(job.source_choices.get(index))
+                can_choose = True
             elif picker_out:
                 job.source_choices[index] = list(picker_out)
-                can_choose = bool(job.source_choices.get(index))
+                can_choose = True
             else:
-                job.source_choices.pop(index, None)
-                can_choose = False
+                can_choose = True
         if keep_outputs:
             message = str(exc) or "Could not save the file to the library folder."
-        elif can_choose:
-            message = "Download failed. You can retry this track or choose a source."
-        elif picker_filled[0] or (forced_id and "403" in str(exc)):
-            message = "Download failed. No alternate sources found."
         else:
-            message = "Download failed. You can retry this track."
+            message = "Download failed. You can retry this track or choose a source."
         extra: dict[str, Any] = {"can_choose_source": can_choose}
         if download_url:
             extra["download_url"] = download_url
