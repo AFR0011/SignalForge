@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -1147,6 +1148,17 @@ def youtube_watch_url(entry: dict[str, Any]) -> str | None:
 
 
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+PASTE_URL_MAX_CHARS = 500
+PASTE_INVALID_MESSAGE = "Paste a Spotify track link or a YouTube video link."
+_SPOTIFY_TRACK_ID_RE = re.compile(r"^[A-Za-z0-9]{10,32}$")
+_YOUTUBE_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+}
 PICKER_SOURCE_LIMIT = 9
 SOURCE_THUMB_MAX_BYTES = 200_000
 YOUTUBE_THUMB_HOST = "i.ytimg.com"
@@ -1157,6 +1169,52 @@ PREVIEW_MAX_BYTES = 5_000_000
 def youtube_video_id(value: str) -> str | None:
     if isinstance(value, str) and YOUTUBE_VIDEO_ID_RE.fullmatch(value):
         return value
+    return None
+
+
+def parse_pasted_source_url(value: str) -> dict[str, str] | None:
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw or len(raw) > PASTE_URL_MAX_CHARS:
+        return None
+    if raw.lower().startswith("spotify:track:"):
+        track_id = raw.split(":", 2)[-1].split("?")[0].strip()
+        if _SPOTIFY_TRACK_ID_RE.fullmatch(track_id):
+            return {"kind": "spotify", "url": f"https://open.spotify.com/track/{track_id}"}
+        return None
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = youtube_video_id(path.strip("/").split("/")[0] if path.strip("/") else "")
+        if video_id is not None:
+            return {"kind": "youtube", "id": video_id}
+        return None
+    if host in _YOUTUBE_HOSTS:
+        parts = [part for part in path.split("/") if part]
+        query = parsed.query
+        video_id = None
+        if parts[:1] == ["watch"] or path.endswith("/watch"):
+            match = re.search(r"(?:^|&)v=([A-Za-z0-9_-]{11})(?:&|$)", f"&{query}&")
+            if match:
+                video_id = youtube_video_id(match.group(1))
+        elif len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"}:
+            video_id = youtube_video_id(parts[1])
+        if video_id is not None:
+            return {"kind": "youtube", "id": video_id}
+        return None
+    if host == "open.spotify.com":
+        parts = [part for part in path.split("/") if part]
+        if parts and parts[0].startswith("intl-"):
+            parts = parts[1:]
+        if len(parts) >= 2 and parts[0] == "track":
+            track_id = parts[1].split("?")[0]
+            if _SPOTIFY_TRACK_ID_RE.fullmatch(track_id):
+                return {"kind": "spotify", "url": f"https://open.spotify.com/track/{track_id}"}
+        return None
     return None
 
 

@@ -677,6 +677,47 @@ def test_preview_clip_path_uses_job_dir_and_video_id(tmp_path):
         application.preview_clip_path(tmp_path / "job", "bad")
 
 
+def test_parse_pasted_source_url_accepts_youtube_and_spotify_tracks():
+    youtube_urls = [
+        "https://www.youtube.com/watch?v=labellabel1&list=PLxx&t=12",
+        "https://youtu.be/labellabel1?si=abc",
+        "https://www.youtube.com/shorts/labellabel1",
+        "https://www.youtube.com/embed/labellabel1",
+        "https://www.youtube.com/live/labellabel1",
+        "https://music.youtube.com/watch?v=labellabel1",
+        "https://m.youtube.com/watch?v=labellabel1",
+    ]
+    for url in youtube_urls:
+        assert application.parse_pasted_source_url(url) == {"kind": "youtube", "id": "labellabel1"}
+    assert application.parse_pasted_source_url(
+        "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=xx"
+    ) == {"kind": "spotify", "url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"}
+    assert application.parse_pasted_source_url(
+        "https://open.spotify.com/intl-en/track/4cOdK2wGLETKBW3PvgPWqT"
+    ) == {"kind": "spotify", "url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"}
+    assert application.parse_pasted_source_url(
+        "spotify:track:4cOdK2wGLETKBW3PvgPWqT"
+    ) == {"kind": "spotify", "url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"}
+    rejects = [
+        "",
+        "https://example.com/watch?v=labellabel1",
+        "https://www.youtube.com/playlist?list=PLxx",
+        "https://www.youtube.com/channel/UCxxxxxxxxxxxxxx",
+        "https://www.youtube.com/@starling",
+        "https://www.youtube.com/results?search_query=halo",
+        "https://open.spotify.com/album/1abc",
+        "https://open.spotify.com/playlist/1abc",
+        "https://open.spotify.com/artist/1abc",
+        "https://open.spotify.com/episode/1abc",
+        "not a url",
+        "x" * (application.PASTE_URL_MAX_CHARS + 1),
+    ]
+    for url in rejects:
+        assert application.parse_pasted_source_url(url) is None
+    assert application.PASTE_URL_MAX_CHARS == 500
+    assert application.PASTE_INVALID_MESSAGE == "Paste a Spotify track link or a YouTube video link."
+
+
 def test_build_source_preview_writes_bounded_mp3_without_library_or_retain(tmp_path, monkeypatch):
     job_dir = tmp_path / "job"
     job_dir.mkdir()
