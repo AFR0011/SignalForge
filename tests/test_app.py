@@ -724,6 +724,38 @@ def test_build_source_preview_writes_bounded_mp3_without_library_or_retain(tmp_p
     assert application.PREVIEW_MAX_BYTES == 5_000_000
 
 
+def test_build_source_preview_exposes_bundled_ffmpeg_to_range_downloader(tmp_path, monkeypatch):
+    from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
+
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    ffmpeg_path = str(tmp_path / "bundled" / "ffmpeg.exe")
+    captured: dict[str, Any] = {}
+
+    class FakeYDL:
+        def __init__(self, options):
+            captured["ctx"] = FFmpegPostProcessor._ffmpeg_location.get()
+            captured["outtmpl"] = options["outtmpl"]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def download(self, _queries):
+            captured["during_download"] = FFmpegPostProcessor._ffmpeg_location.get()
+            Path(captured["outtmpl"].replace(".%(ext)s", ".mp3")).write_bytes(b"ID3preview")
+
+    monkeypatch.setattr(application, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(application, "resolve_js_runtime", lambda: ("deno", "deno"))
+    result = application.build_source_preview(job_dir, "labellabel1", ffmpeg_path, 100)
+    assert result == job_dir / "preview-labellabel1.mp3"
+    assert captured["ctx"] == ffmpeg_path
+    assert captured["during_download"] == ffmpeg_path
+    assert FFmpegPostProcessor._ffmpeg_location.get() is None
+
+
 def test_build_source_preview_returns_none_on_403_or_oversize(tmp_path, monkeypatch):
     job_dir = tmp_path / "job"
     job_dir.mkdir()

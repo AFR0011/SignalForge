@@ -46,6 +46,7 @@ from mutagen.id3 import APIC, ID3, error
 from mutagen.mp3 import MP3
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from yt_dlp import DownloadError, YoutubeDL
+from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
 
 
 LOGGER = logging.getLogger(__name__)
@@ -1226,12 +1227,15 @@ def build_source_preview(
             except OSError:
                 LOGGER.warning("Could not remove preview leftover %s", leftover.name)
 
+    token = FFmpegPostProcessor._ffmpeg_location.set(ffmpeg_path)
     try:
         with YoutubeDL(options) as downloader:
             downloader.download([f"https://www.youtube.com/watch?v={bound}"])
     except DownloadError:
         remove_leftovers()
         return None
+    finally:
+        FFmpegPostProcessor._ffmpeg_location.reset(token)
     if not dest.is_file():
         produced = output_base.with_suffix(".mp3")
         if produced.is_file() and produced != dest:
