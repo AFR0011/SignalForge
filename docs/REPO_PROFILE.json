@@ -1,9 +1,9 @@
 {
   "schema_version": "agentic-workflow/v2",
-  "root": "C:\\Users\\farro\\Desktop\\Projects\\SpotifyDownAutomater",
+  "root": ".",
   "files_scanned": 37,
   "scan_truncated": false,
-  "last_reconciled": "2026-07-18",
+  "last_reconciled": "2026-09-03",
   "primary_type": "software",
   "traits": [
     "flask-web-app",
@@ -121,7 +121,7 @@
     "automated-tests"
   ],
   "selection_source": "semantic reconciliation",
-  "project_name": "SpotifyDownAutomater",
+  "project_name": "SignalForge",
   "current_cycle_status": "COMPLETE_WITH_RISKS",
   "latest_tester_verdict": "PASS_WITH_RISKS"
 }

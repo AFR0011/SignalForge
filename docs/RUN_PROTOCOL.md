@@ -1,7 +1,7 @@
 # Run and Verification Protocol
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -40,6 +40,9 @@ Use the lightest check that can disprove a completion claim, then broaden accord
 
 ## Current evidence baseline
 
+- `PORTFOLIO-FINALIZATION-005` preflight: 118 tests passed; publication
+  guard, Python/JavaScript syntax, `pip check`, and diff checks passed; current
+  public `main` CI is green.
 - `SELECT-ALL-QUEUE-004` focused queue selection: 13 passed, 49 deselected.
 - Full pytest suite: 62 passed twice (1.49s and 1.36s in the independent TEST run).
 - Python/JavaScript syntax, `pip check`, and `git diff --check`: pass.
@@ -52,7 +55,10 @@ Use the lightest check that can disprove a completion claim, then broaden accord
 - Do not access `.env` values, deployment credentials, protected user media, or production state during ordinary verification.
 - Production must use exactly one worker while registry, ownership, capacity, rate, activity, and TTL authority remains process-local.
 - `pip-audit` is point-in-time evidence, and exact versions without hashes do not fully establish artifact provenance.
-- Record live media, FFmpeg, deployment, populated-browser, source-rights, and secret-rotation checks as unavailable until direct evidence exists.
+- Record live media, FFmpeg, deployment, populated-browser accessibility, and
+  source-rights checks as unavailable until direct evidence exists. Credential
+  rotation/ref containment is confirmed; GitHub cached-object removal remains
+  unavailable until Support confirms it.
 
 ## Evidence recording
 

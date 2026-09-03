@@ -21,6 +21,18 @@ Do not commit:
 
 The committed `.env.example` contains no usable secret.
 
+### Historical credential incident
+
+A deleted historical branch once tracked `.env` with a session/CSRF signing
+credential. The owner confirmed that the credential was rotated and removed
+from active use. The affected commit is absent from advertised refs and fresh
+clones. GitHub cached direct-object removal remains pending with GitHub Support,
+so this incident is not marked fully closed.
+
+Valid `main` history is intentionally preserved because the sensitive commit
+is already unreferenced; rewriting current history would not remove GitHub's
+server-side cached object. Never retrieve, publish, or reuse the old value.
+
 ## Application security model
 
 The current application uses:

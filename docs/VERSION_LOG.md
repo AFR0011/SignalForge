@@ -1,7 +1,7 @@
 # Version Log
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -37,3 +37,18 @@ Initialized: 2026-07-17
 - Raised the request/UI selection cap to the imported CSV size (default 2,000 rows) and queued overflow tracks in a job-local pending list that drains as reservations free.
 - Independent verdict: `PASS_WITH_RISKS` after 13 focused queue tests and 62 full tests passed twice; syntax, `pip check`, and `git diff --check` passed. Frozen product hashes were unchanged. `pip-audit` was unavailable.
 - Workflow state closed `COMPLETE_WITH_RISKS`; historical verdicts and external/live-verification actions remain outstanding.
+
+## 2026-09-03 - PORTFOLIO-FINALIZATION-005
+
+- Preserved the same SignalForge repository and all valid history while removing
+  five current-tree transcript/editor-state artifacts, adding recurrence guards,
+  scrubbing an obsolete workstation path, and reconciling public presentation,
+  security, CI, and test evidence.
+- Added a clearly labeled synthetic-data interface overview derived from a
+  verified local browser DOM. No live provider or media operation was used.
+- Initial independent verdict: `FAIL` for a misplaced append-only log entry.
+  Corrective independent verdict: `PASS_WITH_RISKS` after the ordering repair;
+  118 tests and all focused publication/integrity checks passed.
+- Closed `COMPLETE_WITH_RISKS`. GitHub cached-object cleanup, automatic
+  source/rights provenance, full browser accessibility/end-to-end, live
+  media/FFmpeg/deployment, and hash locking remain open.

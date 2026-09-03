@@ -1,10 +1,17 @@
 # Signal Forge
 
+[![Signal Forge CI](https://github.com/AFR0011/SignalForge/actions/workflows/ci.yml/badge.svg)](https://github.com/AFR0011/SignalForge/actions/workflows/ci.yml)
+
 Signal Forge is a backend-focused Flask and Socket.IO application for isolated asynchronous media-processing jobs. A user imports a CSV track list, selects any or all imported tracks, and follows each job from admission through background processing to authorized file delivery.
 
 The project began as personal automation and is presented publicly for its engineering architecture: session-scoped authorization, atomic resource admission, bounded concurrency, path-confined artifacts, real-time progress, cleanup/recovery semantics, and automated reliability/security tests.
 
 > Use Signal Forge only for media you are legally permitted to download and process. Source-provider terms and copyright rules remain the user's responsibility. Search-based source selection may return a different recording from the one intended. Signal Forge is not affiliated with Spotify, YouTube, Apple, or any other media platform.
+
+![Illustrated Signal Forge interface showing a synthetic CSV import and isolated job controls](docs/assets/signalforge-interface.svg)
+
+_Illustrated from the verified local interface with synthetic track data. No
+live-provider request, download, or copyrighted media is part of this visual._
 
 ## Engineering highlights
 
@@ -182,6 +189,10 @@ python tools/publication_guard.py
 
 GitHub Actions also runs a dependency vulnerability audit with `pip-audit` before the test suite. CI is intentionally part of the publication contract rather than decorative green confetti.
 
+At the 2026-09-03 portfolio finalization baseline, the complete local suite
+passes 118 tests. Live provider, FFmpeg, populated-browser accessibility, and
+deployed one-worker behavior remain separate release checks.
+
 The tests cover, among other things:
 
 - production secret validation and secure cookies;
@@ -238,7 +249,12 @@ python -m pip install --requirement requirements.txt
 
 ## Publication notes
 
-See [`PUBLICATION.md`](PUBLICATION.md) for the supported portfolio claims and final repository-publication checklist. In particular, the historical Git repository should be reviewed for old secrets or generated artifacts before changing visibility, because current-tree cleanup does not rewrite old blobs.
+See [`PUBLICATION.md`](PUBLICATION.md) for supported portfolio claims, the
+history-preserving publication decision, and remaining release checks.
+SignalForge remains the canonical public repository with its valid development
+history. A rotated historical credential exists only in an already-unreferenced
+GitHub object; its cached-view removal is a GitHub Support action and is not
+represented as complete here.
 
 ## License
 

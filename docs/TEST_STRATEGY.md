@@ -1,7 +1,7 @@
 # Test Strategy
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -42,14 +42,20 @@ Initialized: 2026-07-17
 
 ## Verified baseline
 
+- 2026-09-03 finalization preflight: complete suite 118 passed; current public
+  `main` CI succeeds on Python 3.14.6 and runs publication, dependency-audit,
+  syntax, and test checks.
 - `SELECT-ALL-QUEUE-004` focused queue selection: 13 passed.
 - Complete suite: 62 passed twice (1.49s and 1.36s).
 - Supporting syntax, dependency consistency, and diff checks passed. `pip-audit` was unavailable in this cycle.
 
 ## Coverage gaps
 
-- No CI workflow or supported-runtime matrix is committed.
-- No populated-browser end-to-end/visual/accessibility smoke was run against the final state.
+- CI is committed for Python 3.14.6; no multi-runtime/platform matrix is
+  committed.
+- A local browser rendered the synthetic three-track workspace without console
+  errors, and the DOM-driven interface visual was reviewed. No full
+  populated-browser end-to-end/accessibility audit was run.
 - No live yt-dlp/YouTube/iTunes, artwork, FFmpeg conversion, target deployment, load, long-duration, restart, or multi-process test was run.
 - Automatic source identity, rights, and provenance are not proven by the automated suite.
 - Requirements are exact-version pinned but not hash pinned.
@@ -57,7 +63,8 @@ Initialized: 2026-07-17
 ## Release gate
 
 - Preserve all historical tester verdicts and require current focused/full checks to pass with frozen source hashes.
-- Deployment owner confirms secret rotation/session invalidation/history containment.
+- Keep the confirmed credential rotation/ref containment distinct from the
+  still-pending GitHub cached-object removal.
 - Run the committed one-worker command in the target environment with a strong rotated secret and validate writable ephemeral storage.
 - Complete controlled live-media/FFmpeg and populated-browser checks with legally permitted media.
 - Accept or resolve the open source-matching/rights/provenance and residual supply-chain/retention risks documented in `RISK_REGISTER.md`.

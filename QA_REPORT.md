@@ -1,62 +1,107 @@
 # QA Report
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
 ## Current cycle
 
-- Batch: `SELECT-ALL-QUEUE-004`
-- Tester verdict: `PASS_WITH_RISKS`
+- Batch: `PORTFOLIO-FINALIZATION-005`
+- Initial tester verdict: `FAIL`
+- Corrective tester verdict: `PASS_WITH_RISKS`
 - Closure recommendation: `COMPLETE_WITH_RISKS`
-- Evidence basis: independent TEST against frozen product sources on 2026-08-14.
+- Corrective frozen tree:
+  `58fda0eec08d661d6ccb1d217e1639a9f902083a`
+- Evidence date: 2026-09-03
 
-The batch meets its accepted automated criteria: the imported list can be selected and queued in one request, pending work drains as reservations free, and never-fit/disk-budget cases fail closed. This verdict does not verify deployment-owner secret rotation, live media services, a deployed production instance, multi-worker operation, or a populated-browser end-to-end flow.
+The presentation/privacy batch satisfies its locally testable acceptance criteria.
+It removes current-tree transcript/editor state, prevents recurrence, preserves
+product behavior and all valid history, makes the public narrative truthful, and
+adds a synthetic-data interface overview. It does not close GitHub's cached
+direct-object risk or verify live media, FFmpeg, deployment, full browser
+accessibility/end-to-end behavior, multi-worker operation, or legal source
+identity.
 
 ## Verdict history
 
-- `SECURE-JOB-ISOLATION-001`: `FAIL`. The independent lifecycle/resource failure remains historical fact.
-- `RESOURCE-ATOMICITY-002`: `PASS_WITH_RISKS`. The corrective lifecycle/resource batch passed 34 tests twice, with residual capacity and external-verification risks.
-- `CAPACITY-SUPPLYCHAIN-003` initial implementation: `FAIL`. Manual cleanup and CSV replacement released global capacity before deletion completed.
-- `CAPACITY-SUPPLYCHAIN-003` manual-close corrective pass: `PASS_WITH_RISKS`. The closing job now retains its slot and byte accounting until deletion and atomic replacement/finalization complete.
-- `SELECT-ALL-QUEUE-004`: `PASS_WITH_RISKS`. Full-list selection and bounded pending queue passed focused and repeated automated verification.
+- `SECURE-JOB-ISOLATION-001`: `FAIL`. Preserved historical lifecycle/resource
+  failure.
+- `RESOURCE-ATOMICITY-002`: `PASS_WITH_RISKS`.
+- `CAPACITY-SUPPLYCHAIN-003` initial implementation: `FAIL`.
+- `CAPACITY-SUPPLYCHAIN-003` corrective pass: `PASS_WITH_RISKS`.
+- `SELECT-ALL-QUEUE-004`: `PASS_WITH_RISKS`.
+- `PORTFOLIO-FINALIZATION-005` initial TEST: `FAIL` because the new execution
+  record interrupted an older append-only log section.
+- `PORTFOLIO-FINALIZATION-005` corrective TEST: `PASS_WITH_RISKS` after the
+  log-order repair and a fresh complete verification pass.
 
-No earlier `FAIL` or `PASS_WITH_RISKS` verdict is superseded or rewritten.
+No prior `FAIL` or `PASS_WITH_RISKS` verdict is superseded or rewritten.
 
-## Acceptance evidence
+## Corrective acceptance evidence
 
 | Acceptance area | Independent evidence | Result |
 | --- | --- | --- |
-| Full-list selection, pending enqueue, drain, never-fit failure, pending cleanup/TTL | Focused selection: 13 passed, 49 deselected in 0.49s | Pass |
-| Existing isolation, route, resource, and regression behavior plus new queue tests | Full `python -m pytest -q`: 62 passed in 1.49s; repeated: 62 passed in 1.36s | Pass |
-| Python and browser-script syntax | `python -m py_compile app.py`; `node --check static/app.js` | Pass |
-| Installed dependency consistency | `python -m pip check` | Pass |
-| Audited Python dependency set | `python -m pip_audit -r requirements.txt` unavailable (`No module named pip_audit`) | Unavailable; residual of RISK-008 |
-| Patch hygiene | `git diff --check` | Pass |
-| Tester isolation and worktree side effects | Frozen source hashes unchanged after TEST; no product repair during verification | Pass |
+| Application regression | `python -m pytest -q`: 118 passed in 5.46s | Pass |
+| Python/JavaScript syntax | `python -m compileall -q app.py tests tools`; `node --check static/app.js` | Pass |
+| Installed dependency consistency | `python -m pip check`: no broken requirements | Pass |
+| Publication policy | `python tools/publication_guard.py` | Pass |
+| Patch hygiene | `git diff --cached --check` | Pass |
+| Interface visual structure | SVG parsed as XML; synthetic labels and no-live-provider boundary inspected | Pass with pixel-level tester limitation |
+| Protected sources | Eight SHA-256 hashes matched; protected staged diff empty | Pass |
+| Internal artifacts | Removed-prefix tracked count zero; both ignore probes passed | Pass |
+| Repository identity/history | No rewrite; 84 valid baseline commits preserved; seven feature tips are ancestors of `main` | Pass |
+| Documentation integrity | Historical bullets restored; execution and initial FAIL appended after the prior final section | Pass |
+| Tester isolation | Corrective staged tree and patch hashes identical before/after TEST; no repository side effect | Pass |
 
-## Acceptance mapping
+Root corroboration after the corrective TEST also passed the 118-test suite in
+3.66s, syntax, dependency consistency, publication guard, JSON/SVG parsing,
+protected hashes, ignore checks, current-tree workstation-path scan, and staged
+diff check.
 
-- Default `SELECTION_LIMIT` is 2,000, matching the default CSV row cap. Select-all copy and controls no longer say “first 20”.
-- `/download` accepts the full imported list within `SELECTION_LIMIT` and song count; `/retry-failed` no longer slices failed tracks to 20.
-- Task-ceiling selections reserve a prefix and pending-queue the remainder; drain after release starts the next pending index.
-- Immediate reservations still honor per-job task, per-job byte, and process-wide byte ceilings. Direct `reserve_indices` remains all-or-nothing.
-- Pending tracks that cannot fit remaining retained bytes fail with a disk-budget error. Cleanup and TTL treat pending as outstanding work.
-- Historical FAIL/PASS_WITH_RISKS verdicts remain recorded above.
+## Browser and visual evidence
+
+A local development instance imported a three-row synthetic CSV. The browser
+showed the job dashboard and queue, Select All updated the synthetic selection,
+the page had meaningful content, and no console warning/error or framework error
+overlay was detected. No source-provider, media, FFmpeg, or download operation
+ran.
+
+The in-app browser's pixel export was unavailable. The repository therefore
+contains a clearly labeled SVG interface overview derived from the verified DOM,
+not a claimed screenshot. Root rendered that SVG locally and visually confirmed
+that it contains only synthetic track names and no workstation path, credential,
+personal job identifier, real listening history, or copyrighted media.
+Independent TEST verified its XML and text/content boundaries but could not
+independently inspect pixels.
+
+## Security and privacy evidence
+
+- The owner confirmed the historical session/CSRF credential was rotated and
+  removed from active use.
+- The affected commit is absent from advertised refs and fresh clones.
+- GitHub's known direct object view remains externally available pending Support
+  cleanup; `RISK-001` remains High/open.
+- Redacted reachable-history scanning reported zero high-confidence private-key,
+  GitHub, AWS, Slack, Stripe, or JWT patterns and printed no secret values.
+- The five removed files contained internal conversations, generated state, and
+  workstation paths. A broad phone-number heuristic produced noisy numeric-log
+  candidates; Phase 1 review did not identify another credential or regulated
+  private record.
+- Preserving valid history means non-secret historical transcript versions remain
+  reachable. Current-tree deletion is not described as historical erasure.
 
 ## Residual risks and unavailable checks
 
-- `RISK-001` remains open High and external: the remote branch is absent and production secret validation fails closed, but deployment-owner rotation, session invalidation, confirmation of non-use, and reachable-history purge were not verified.
-- Job ownership, rate limits, registry capacity, activity clocks, TTL, and pending drain are process-local. The committed one-worker topology is required; multi-worker behavior is unsupported and unverified.
-- Pending items do not reserve bytes until admitted. A later drain can still hit job/process ceilings; never-fit cases fail closed. Cross-job process-budget stalls may wait until this job completes other work or receives another queue request (RISK-007 residual).
-- Requirements are exact-version pinned but not hash pinned. `pip-audit` was unavailable in this TEST environment.
-- No live yt-dlp, YouTube/iTunes, artwork, FFmpeg media conversion, or deployed production verification was run.
-- No populated-browser end-to-end or visual/accessibility smoke test was run. Automated template/UI contracts and JavaScript syntax passed, but a human browser check remains.
-- Automatic source selection can still choose mismatched media; rights and provenance review remains a product/legal responsibility (`RISK-012`).
-
-## Historical bootstrap validation
-
-- Initial structural audit: `PASS_WITH_WARNINGS`; semantic reconciliation completed afterward.
-- Bootstrap handoff: `STOP_NEEDS_HUMAN` because a reachable remote branch tracked `.env` with a `SECRET_KEY` variable. This historical stop is preserved.
-- Historical read-only checks found Eventlet/runtime and template failures in the original application. Later batches replaced the production worker stack and template behavior; the historical findings are not deleted.
+- GitHub cached-view/reference removal and server-side garbage collection remain
+  an external High risk until Support confirms the known URLs no longer resolve.
+- Local `pip-audit` is unavailable. The committed CI workflow installs and runs
+  pinned `pip-audit==2.10.1`; all audit evidence is point-in-time.
+- Automatic source matching, rights, and provenance remain open.
+- Live yt-dlp/YouTube/iTunes, artwork, FFmpeg, target deployment, load, restart,
+  retention timing, full populated-browser accessibility/end-to-end behavior,
+  and multi-worker coordination were not verified.
+- Requirements are exact-version pinned but not hash pinned.
+- Public-commit CI, final metadata, branch-ref cleanup, and fresh-clone
+  corroboration are performed after the normal commit and recorded in the
+  external Phase 2 report. A failure there reopens the batch.

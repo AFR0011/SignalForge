@@ -28,3 +28,14 @@ Verdict: STOP_NEEDS_HUMAN
 - Independent final verification found the remote `localUseOnly` branch absent, and automated production-configuration tests show missing/weak/placeholder secrets fail closed.
 - Deployment-owner secret rotation, existing-session invalidation, confirmation of non-use, and reachable-history purge remain unverified. `RISK-001` therefore remains open High as an external action.
 - Later repair batches culminated in `CAPACITY-SUPPLYCHAIN-003` corrective `PASS_WITH_RISKS` and workflow closure `COMPLETE_WITH_RISKS`. That batch closure does not claim the external secret actions occurred.
+
+## 2026-09-03 security update
+
+- The owner subsequently confirmed that the historical credential was rotated
+  and removed from active use. Rotation invalidates sessions signed with the old
+  Flask secret.
+- The affected commit is absent from advertised refs and fresh clones. GitHub
+  still serves the already-unreferenced object through its known direct address.
+- The preserved bootstrap verdict remains historical evidence. Current
+  `RISK-001` now tracks GitHub Support cached-view/reference removal and
+  server-side garbage collection rather than uncompleted credential rotation.

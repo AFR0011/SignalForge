@@ -1,7 +1,7 @@
 # Repository Profile
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -10,7 +10,7 @@ Initialized: 2026-07-17
 - Primary type: `software`
 - Secondary traits: Flask web application, Flask-SocketIO threading/simple-websocket, media processing, external network services, single-worker Gunicorn deployment, pytest verification
 - Confidence: high
-- Semantic inventory reconciled: 2026-07-18
+- Semantic inventory reconciled: 2026-09-03
 
 ## Evidence
 
@@ -26,7 +26,9 @@ Initialized: 2026-07-17
 - Active-state authority: `DEV_STATE.md`.
 - Accepted batch/criteria authority: `BLUEPRINT.md`.
 - Verification and uncertainty: `QA_REPORT.md` and `RISK_REGISTER.md`.
-- Current cycle: `SELECT-ALL-QUEUE-004` closed `COMPLETE_WITH_RISKS`; final tester verdict `PASS_WITH_RISKS`.
+- Current cycle: `PORTFOLIO-FINALIZATION-005` closed `COMPLETE_WITH_RISKS`
+  after corrective `PASS_WITH_RISKS`; prior `SELECT-ALL-QUEUE-004` remains
+  closed `COMPLETE_WITH_RISKS`.
 
 ## Entry points and commands
 
@@ -56,6 +58,10 @@ Initialized: 2026-07-17
 
 - [x] Primary type and traits confirmed by semantic repository mapping.
 - [x] Authority, protected paths, generated outputs, and commands reconciled to final implementation.
-- [x] Pytest verification path exists; `SELECT-ALL-QUEUE-004` independent full suite passed 62 tests twice.
-- [ ] Deployment owner confirmed secret rotation/session invalidation/history containment and target production behavior.
+- [x] Pytest verification path exists; the 2026-09-03 finalization preflight
+  passed 118 tests and current public `main` CI is green.
+- [x] Owner confirmed the historical credential was rotated and removed from
+  active use; the affected commit is absent from advertised refs/fresh clones.
+- [ ] GitHub Support confirmed cached direct-object removal.
+- [ ] Target one-worker production behavior was verified.
 - [ ] Live media/FFmpeg and populated-browser checks completed.

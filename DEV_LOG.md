@@ -1,7 +1,7 @@
 # Development Log
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -198,3 +198,82 @@ Limitations for independent testing:
 - Reconciled QA, risk, project state, version history, architecture, run protocol, test strategy, and shared records with the independent `PASS_WITH_RISKS` verdict.
 - Released cooperative locks. Historical FAIL/PASS_WITH_RISKS verdicts were not rewritten.
 - Marked the batch `COMPLETE_WITH_RISKS`; no new batch was started.
+
+## 2026-09-03 - PORTFOLIO-FINALIZATION-005 execution
+
+- User accepted Option A: keep the same public SignalForge repository and valid
+  history; remove current-tree internal artifacts; reconcile presentation,
+  security, and evidence; add a synthetic visual; and prepare GitHub Support
+  cleanup for the already-unreferenced sensitive object.
+- Removed three tracked `_tmp_mine/*.txt` transcripts and two tracked
+  `.cursor/hooks/state/*.json` files from the current tree. Added narrow ignore
+  rules and publication-guard checks for both prefixes.
+- Replaced the obsolete absolute workstation root in
+  `docs/REPO_PROFILE.json` with a repository-relative root and added a
+  publication check for absolute user-home paths in tracked text.
+- Reconciled the canonical SignalForge identity, same-repository history policy,
+  current 118-test/green-CI baseline, completed credential rotation/ref
+  containment, and pending GitHub cached-object removal across active public and
+  workflow documentation. Historical tester verdicts and dated 58/62-test
+  evidence remain preserved.
+- Verified the local application in a browser using a synthetic three-track CSV.
+  The import rendered the job dashboard and queue, Select All worked, meaningful
+  content was present, and no console warning/error or framework error overlay
+  was detected. No live provider, FFmpeg, or media operation was invoked.
+- The available browser could not export screenshot pixels. Instead of
+  misrepresenting a fabricated screenshot, created
+  `docs/assets/signalforge-interface.svg`, clearly labeled as an illustrated
+  overview derived from the verified DOM. A local static render was visually
+  inspected and contains only synthetic names and no workstation path, job ID,
+  credential, personal data, or copyrighted media.
+- Redacted all-reachable-history scanning reported zero high-confidence private
+  key, GitHub, AWS, Slack, Stripe, or JWT token patterns. Broad numeric heuristics
+  in the removed files produced non-secret log-number candidates; no value was
+  printed. Prior Phase 1 content review found workstation paths and internal
+  conversation/state, not an additional credential.
+
+Frozen product/dependency hashes before TEST:
+
+- `app.py`: `29d6afac6ec3a5353e85ffc0ddb3fb2208776d801116df4f8b53203d189cd968`
+- `static/app.js`: `20a9590610e9490b1ebebdf8cccf8c19cba4dcd2162aba62a42b79db0c7b81c2`
+- `templates/index.html`: `393f4443c0751268b1e6762a908a8a81fec351f19f9154a797527bdbc49bd066`
+- `tests/test_app.py`: `2d49aa8f8777c197a1915566bca8132f4ac63b0410c3fd4c0eab5ae6029af3af`
+- `requirements.txt`: `44f43a36b5289ec2ff94991716e33a884ed5521836a9a02ebbba2d9296d4ea3f`
+- `requirements-dev.txt`: `86083a12fab36857cf6ac4f6946656408ebed0f1ae64e5f52bdf85175525ef6a`
+- `Procfile`: `d3381efb2d38acb788ec7ef10a98af915a72ea0a38b1ba86d87c1871a3f28b4d`
+- `.python-version`: `48d0992617133b1e48ec7bbb2b7582a859e50bf1ec472b38611cf0cfee5d3fa5`
+
+## 2026-09-03 - PORTFOLIO-FINALIZATION-005 initial independent TEST
+
+- Verdict: `FAIL`. All 118 tests, syntax checks, dependency consistency,
+  publication guard, SVG XML parsing, protected hashes, staged diff hygiene,
+  removed-path/ignore checks, and merged-branch ancestry checks passed.
+- The new execution section had been inserted inside the 2026-07-18
+  documentation-QA section, causing three historical bullets to be attributed
+  to the 2026-09-03 entry and violating append-only log semantics.
+- Returned to EXECUTE for a bounded documentation-only ordering repair. The
+  failed verdict remains preserved and a fresh independent TEST is required.
+
+## 2026-09-03 - PORTFOLIO-FINALIZATION-005 corrective independent TEST
+
+- Verdict: `PASS_WITH_RISKS` on frozen staged tree
+  `58fda0eec08d661d6ccb1d217e1639a9f902083a`.
+- `python -m pytest -q`: 118 passed in 5.46s.
+- Python/JavaScript syntax, `pip check`, publication guard, staged diff, SVG
+  XML, all eight protected hashes, removed-path/ignore checks, and all seven
+  merged remote branch ancestry checks passed.
+- The staged tree and patch hashes were identical before and after TEST; no
+  repository side effect occurred. Product/runtime/template/test/dependency
+  content remained byte-identical.
+- The historical 2026-07-18 bullets are restored to their section, the 2026-09-03
+  entries are append-only, and the initial `FAIL` remains preserved.
+
+## 2026-09-03 - PORTFOLIO-FINALIZATION-005 documentation QA closure
+
+- Reconciled the corrective verdict, initial failure, acceptance evidence,
+  browser/visual limitations, security state, risks, project state, version
+  history, and shared records.
+- Closure recommendation: `COMPLETE_WITH_RISKS`. Public CI/fresh-clone and
+  GitHub metadata/merged-branch corroboration follow the normal commit; failure
+  in those checks reopens the batch.
+- Released the cooperative repository lock. Product sources remained frozen.

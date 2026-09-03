@@ -1,7 +1,7 @@
 # Repository Map
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -46,7 +46,9 @@ Profile `software`: a Flask/Flask-SocketIO CSV-to-MP3 web application with a res
 - Development/test install: `python -m pip install --requirement requirements-dev.txt`.
 - Production: `gunicorn --worker-class gthread --workers 1 --threads 4 --bind 0.0.0.0:$PORT app:app`.
 - Local development: `python app.py` (loopback, debug disabled).
-- Automated suite: `python -m pytest -q` (62 tests in the `SELECT-ALL-QUEUE-004` verified state).
+- Automated suite: `python -m pytest -q` (118 tests in the 2026-09-03
+  finalization preflight; the historical `SELECT-ALL-QUEUE-004` verdict used
+  the then-current 62-test suite).
 - Supporting checks: `python -m py_compile app.py`, `node --check static/app.js`, `python -m pip check`, `python -m pip_audit -r requirements.txt`, and `git diff --check`.
 
 ## Protected and sensitive paths
@@ -64,7 +66,10 @@ Profile `software`: a Flask/Flask-SocketIO CSV-to-MP3 web application with a res
 
 ## Current gaps
 
-- Deployment-owner secret rotation, session invalidation, non-use confirmation, and reachable-history purge remain unverified (`RISK-001`).
+- The historical credential is rotated and inactive, and its commit is absent
+  from advertised refs/fresh clones. GitHub cached direct-object removal remains
+  pending under `RISK-001`.
 - Multi-worker/distributed coordination is unsupported; live deployment/load/long-duration behavior is unverified.
-- Dependencies are exact-version pinned but not hash pinned; audit evidence is point-in-time.
+- Dependencies are exact-version pinned but not hash pinned; CI runs
+  `pip-audit`, while audit evidence remains point-in-time.
 - Automatic source matching/rights/provenance, live yt-dlp/FFmpeg, and populated-browser verification remain open limitations.

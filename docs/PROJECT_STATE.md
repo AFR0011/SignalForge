@@ -1,7 +1,7 @@
 # Project State
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -11,7 +11,12 @@ Provide a secure, reliable CSV-to-MP3 workflow with isolated and resource-bounde
 
 ## Current status
 
-`SELECT-ALL-QUEUE-004` is closed `COMPLETE_WITH_RISKS` after the independent verdict `PASS_WITH_RISKS`. Focused queue tests (13 passed) and the full 62-test suite passed twice. Syntax, dependency-consistency, and diff checks passed with frozen product hashes unchanged. `pip-audit` was unavailable in the TEST environment.
+`PORTFOLIO-FINALIZATION-005` closed `COMPLETE_WITH_RISKS` after a preserved
+initial `FAIL` and corrective `PASS_WITH_RISKS`. The independent corrective run
+passed all 118 tests, syntax, dependency consistency, publication guard, SVG XML,
+protected hashes, internal-path/ignore, diff, documentation-order, and
+merged-branch ancestry checks. Product behavior and valid history remained
+frozen. Local `pip-audit` is unavailable, while CI installs and runs it.
 
 Historical verdicts remain authoritative: `SECURE-JOB-ISOLATION-001` `FAIL`; `RESOURCE-ATOMICITY-002` `PASS_WITH_RISKS`; initial `CAPACITY-SUPPLYCHAIN-003` `FAIL`; corrective `CAPACITY-SUPPLYCHAIN-003` `PASS_WITH_RISKS`; `SELECT-ALL-QUEUE-004` `PASS_WITH_RISKS`.
 
@@ -26,12 +31,19 @@ Historical verdicts remain authoritative: `SECURE-JOB-ISOLATION-001` `FAIL`; `RE
 
 ## Open risks and limitations
 
-- The historical secret exposure remains an open High external risk. The remote branch is absent and production secret validation fails closed, but deployment-owner rotation, session invalidation, confirmation of non-use, and reachable-history purge are unverified.
+- The historical credential is rotated and inactive, and the affected commit is
+  absent from advertised refs and fresh clones. GitHub still serves the
+  already-unreferenced object directly, so cached-view removal remains an open
+  High external risk.
 - Automatic source matching, rights, and provenance remain an open Medium product/legal risk.
-- Package versions are pinned but hashes are not; `pip-audit` was unavailable in this cycle.
+- Package versions are pinned but hashes are not; local `pip-audit` is
+  unavailable in this cycle and CI audit evidence is point-in-time.
 - Live yt-dlp/YouTube/iTunes, artwork, FFmpeg, target deployment, and populated-browser end-to-end behavior were not verified.
 - Process-local authority cannot be scaled to multiple workers without shared durable coordination.
 
 ## Next milestone
 
-No new batch is active. Before release, the deployment owner must complete the external security actions and controlled one-worker deployment/live-media/FFmpeg/populated-browser checks. Future bounded work may add hash locking, CI/runtime-matrix coverage, durable multi-worker coordination, and source/provenance review.
+Publish and corroborate the normal descendant commit through public CI and a
+fresh clone, then complete the GitHub Support cached-object request. A public
+deployment still requires controlled one-worker, live-media/FFmpeg, and full
+populated-browser accessibility/end-to-end checks.

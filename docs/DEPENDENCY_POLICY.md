@@ -1,7 +1,7 @@
 # Dependency Policy
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -35,7 +35,8 @@ Initialized: 2026-07-17
 
 1. Review release notes, supported Python/platform versions, licenses, and security advisories.
 2. Update the exact pin and install in a disposable environment using the appropriate requirements file.
-3. Run focused compatibility tests, the 58-test full suite, Python/JavaScript syntax, and `pip check`.
+3. Run focused compatibility tests, the complete current suite,
+   Python/JavaScript syntax, and `pip check`.
 4. Run `python -m pip_audit -r requirements.txt` and record date/result/limitations.
 5. For yt-dlp, Requests, Socket.IO/simple-websocket, Gunicorn, or imageio-ffmpeg changes, run a controlled one-worker live integration smoke test with legally permitted media before release.
 6. Freeze/compare product and dependency-authority hashes through independent verification.
@@ -43,7 +44,8 @@ Initialized: 2026-07-17
 ## Supply-chain improvements still required
 
 - Generate reviewed transitive lock metadata with hashes and install using hash enforcement where deployment tooling permits.
-- Automate recurring dependency audits in CI and define a supported runtime/platform matrix.
+- Keep the committed CI dependency audit current and define a supported
+  runtime/platform matrix.
 - Establish binary provenance/checksum evidence for the packaged or overridden FFmpeg executable.
 - Provide a checksum-pinned Deno (or Node) install on production hosts such as Render; the application fails closed without a JS runtime, and `build.sh` does not vendor one.
 - Document emergency update/rollback ownership for yt-dlp and other rapidly changing external-service adapters.
@@ -53,5 +55,7 @@ Initialized: 2026-07-17
 - `python-dotenv==1.2.2` is present; vulnerable 1.1.1 is absent.
 - Independent `python -m pip check` passed.
 - Independent point-in-time `python -m pip_audit -r requirements.txt` reported no known vulnerability.
-- Full 58-test suite passed twice with mocked network/media boundaries.
+- The 2026-09-03 finalization preflight passed the current 118-test suite with
+  mocked network/media boundaries; historical 58/62-test results remain dated
+  evidence for their respective batches.
 - Live package installation provenance, target deployment, yt-dlp service compatibility, and FFmpeg execution remain release-owner checks.

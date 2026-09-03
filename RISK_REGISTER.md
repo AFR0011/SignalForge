@@ -1,7 +1,7 @@
 # Risk Register
 
 Workflow schema: `agentic-workflow/v2`
-Project: SpotifyDownAutomater
+Project: SignalForge
 Repository profile: software
 Initialized: 2026-07-17
 
@@ -9,19 +9,35 @@ Initialized: 2026-07-17
 
 The original thirteen risks remain traceable below. Status changes are based on implementation plus independent automated evidence; they do not erase the original findings. `SELECT-ALL-QUEUE-004` closes `COMPLETE_WITH_RISKS`.
 
-- One High external security risk remains open: secret rotation/session invalidation/history containment.
+- One High external security risk remains open: GitHub cached/direct-object
+  removal for an already-unreferenced historical credential. The credential
+  itself is rotated and inactive.
 - One Medium product/legal risk remains open: automatic source matching, rights, and provenance.
 - Supply-chain, deployment, privacy-retention, capacity, and verification mitigations retain explicit residual limitations.
+- Current-tree transcript/editor-state exposure is mitigated in
+  `PORTFOLIO-FINALIZATION-005`; non-secret historical versions remain visible
+  by the accepted history-preservation decision.
 
 ## Risks
 
 ### RISK-001 - Historically exposed session/CSRF secret
 
-- Severity: High; Category: security; Status: Open / external action.
+- Severity: High; Category: security; Status: Open / externally contained,
+  server-side cleanup pending.
 - Original evidence: Remote branch `localUseOnly` tracked `.env`; reachable commit `0dce90c` added it. Variable-name-only inspection found `SECRET_KEY`; its value was not read or displayed.
-- Current evidence: Independent verification found the remote `localUseOnly` branch absent. Production configuration tests prove missing, weak, and placeholder secrets fail closed.
-- Unresolved: Deployment-owner rotation, invalidation of sessions signed by the exposed value, confirmation that it is unused, and purge of reachable history were not verified.
-- Required action: Deployment owner must rotate the key everywhere, invalidate existing sessions, confirm non-use, and purge remaining reachable history where appropriate. Never reuse the exposed value.
+- Current evidence: The owner confirmed rotation and removal from active use.
+  Independent verification found the `localUseOnly` branch absent, no
+  advertised branch/tag contains the commit, and a fresh clone does not contain
+  the object. Rotation invalidates sessions signed by the old Flask secret.
+  Production configuration tests also prove missing, weak, and placeholder
+  secrets fail closed.
+- Unresolved: GitHub still serves the already-unreferenced commit/object through
+  its known direct address. This is not reachable from valid `main` history and
+  cannot be removed by rewriting `main`.
+- Required action: Request GitHub Support cached-view/reference removal and
+  server-side garbage collection; verify the known direct commit/blob URLs no
+  longer resolve before closing this risk. Never retrieve, publish, or reuse the
+  exposed value.
 
 ### RISK-002 - Cross-user state and file disclosure
 
@@ -92,6 +108,49 @@ The original thirteen risks remain traceable below. Status changes are based on 
 ### RISK-013 - No automated verification
 
 - Original severity: Medium; Category: verification; Status: Mitigated with residual Medium release-process risk.
-- Evidence: A deterministic 62-test pytest suite now covers configuration, routes, isolation, CSRF, storage, concurrency, capacity, TTL, cleanup, pending queue drain, and mocked media/network boundaries. The `SELECT-ALL-QUEUE-004` tester ran a focused 13-test selection and the full suite twice, plus syntax, dependency, and diff checks, with unchanged frozen source hashes. `pip-audit` was unavailable in that environment.
-- Residual: No CI job, populated-browser end-to-end/visual check, live media/FFmpeg integration, deployed smoke test, or supported-runtime matrix was independently verified.
-- Required action: Add CI across the supported runtime, run a human populated-browser accessibility/visual smoke test, and perform controlled live/deployment checks with legally permitted media.
+- Evidence: The deterministic suite has grown to 118 tests. Current public
+  GitHub Actions installs Python 3.14.6, runs the publication guard and
+  `pip-audit`, checks Python/JavaScript syntax, and runs pytest. The
+  `SELECT-ALL-QUEUE-004` historical tester evidence remains 13 focused and
+  62 full tests twice; the 2026-09-03 finalization preflight passes all 118.
+- Residual: No populated-browser end-to-end/accessibility run, live
+  media/FFmpeg integration, deployed smoke test, or supported-runtime matrix was
+  independently verified. The local browser DOM/render check is not a live-media
+  or deployment result.
+- Required action: Maintain CI, add a supported-runtime matrix if the support
+  promise expands, run a populated-browser accessibility smoke test, and perform
+  controlled live/deployment checks only with legally permitted media.
+
+### RISK-014 - Published internal transcripts and editor state
+
+- Original severity: Medium; Category: privacy/professional hygiene; Status:
+  Mitigated in the current tree with accepted historical residual.
+- Original evidence: Three tracked `_tmp_mine/*.txt` transcript dumps and two
+  `.cursor/hooks/state/*.json` files exposed internal conversations,
+  workstation paths, and generated identifiers.
+- Current evidence: `PORTFOLIO-FINALIZATION-005` removes all five from the
+  current tree, adds narrow ignore rules, and makes the publication guard reject
+  either tracked prefix. The obsolete absolute path in
+  `docs/REPO_PROFILE.json` is replaced with `.`.
+- Residual: Non-secret versions remain reachable in preserved valid history.
+  Current-tree deletion is not historical erasure.
+- Required action: Keep the guard active. If a future redacted scan identifies a
+  real credential or regulated/private data in preserved history, stop and
+  reconsider a narrowly scoped rewrite.
+
+### RISK-015 - Public presentation contradicted repository reality
+
+- Original severity: Medium; Category: correctness/professional presentation;
+  Status: Mitigated pending public publication checks.
+- Original evidence: `PUBLICATION.md` described a private legacy repository
+  and fresh successor although this same repository was public; active
+  governance used the legacy product name and 58/62-test baselines; GitHub
+  description was vague and topics were empty.
+- Current evidence: The finalization batch establishes SignalForge as the
+  canonical same-name, history-preserved repository; separates historical
+  evidence from the current 118-test/CI baseline; removes internal current-tree
+  artifacts; and adds a synthetic-data interface overview.
+- Residual: GitHub description/topics and fresh-public-clone verification occur
+  after the normal publication commit.
+- Required action: Verify public metadata, CI, merged-branch cleanup, and fresh
+  clone before closing the batch.

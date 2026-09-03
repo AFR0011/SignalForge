@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -22,8 +23,26 @@ def check_pinned_requirements(path: Path, failures: list[str], *, allow_include:
             fail(f"{path.name}:{line_number}: dependency is not directly version-pinned: {line}", failures)
 
 
+def tracked_paths(failures: list[str]) -> list[Path]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        fail("unable to enumerate tracked publication files with git ls-files", failures)
+        return []
+    return [
+        ROOT / entry.decode("utf-8", errors="surrogateescape")
+        for entry in result.stdout.split(b"\0")
+        if entry
+    ]
+
+
 def main() -> int:
     failures: list[str] = []
+    tracked = tracked_paths(failures)
 
     required = [
         ROOT / "README.md",
@@ -73,7 +92,7 @@ def main() -> int:
         fail(".env.example must not contain a usable SECRET_KEY", failures)
 
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    for ignored in (".env", "*.zip"):
+    for ignored in (".env", "*.zip", "_tmp_mine/", ".cursor/hooks/state/"):
         if ignored not in gitignore:
             fail(f".gitignore is missing {ignored}", failures)
 
@@ -81,11 +100,28 @@ def main() -> int:
     check_pinned_requirements(ROOT / "requirements-dev.txt", failures, allow_include=True)
 
     forbidden_artifact_suffixes = {".mp3", ".m4a", ".wav", ".flac", ".zip"}
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or ".git" in path.parts:
+    forbidden_internal_prefixes = ("_tmp_mine/", ".cursor/hooks/state/")
+    windows_user_root = r"[A-Za-z]:[\\/]" + "Users" + r"[\\/]"
+    mac_user_root = "/" + "Users" + "/"
+    unix_home_root = "/" + "home" + "/"
+    absolute_workstation_path = re.compile(
+        f"(?:{windows_user_root}|{re.escape(mac_user_root)}|{re.escape(unix_home_root)})",
+        re.IGNORECASE,
+    )
+    for path in tracked:
+        relative = path.relative_to(ROOT).as_posix()
+        if not path.is_file():
             continue
+        if relative.startswith(forbidden_internal_prefixes):
+            fail(f"internal state/transcript file must not be published: {relative}", failures)
         if path.suffix.casefold() in forbidden_artifact_suffixes:
-            fail(f"generated/media artifact must not be published: {path.relative_to(ROOT)}", failures)
+            fail(f"generated/media artifact must not be published: {relative}", failures)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if absolute_workstation_path.search(text):
+            fail(f"tracked text contains an absolute workstation path: {relative}", failures)
 
     if failures:
         print("publication guard failed:")

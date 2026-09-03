@@ -11,3 +11,5 @@ uploads/
 downloads/
 .tmp/
 *.zip
+_tmp_mine/
+.cursor/hooks/state/
